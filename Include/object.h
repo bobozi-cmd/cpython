@@ -5,7 +5,10 @@ extern "C" {
 #endif
 
 
-/* Object and type object interface */
+/* 
+Object and type object interface 
+Object 和 TypeObject 的接口
+*/
 
 /*
 Objects are structures allocated on the heap.  Special rules apply to
@@ -16,10 +19,21 @@ exceptions to the first rule; the standard types are represented by
 statically initialized type objects, although work on type/class unification
 for Python 2.2 made it possible to have heap-allocated type objects too).
 
+Object是在堆上分配的结构。特殊规则适用于Object的使用，
+以确保它们被正确地垃圾收集。
+Object从不静态分配或在栈上分配；只能通过特殊宏和函数访问它们。
+（TypeObject是第一条规则的例外；标准类型由静态初始化的TypeObject表示，
+尽管Python2.2的type/class统一工作也使堆分配类型对象成为可能）。
+type/class: https://stackoverflow.com/questions/22445664/why-types-class-unification-majorly-in-python
+PEP252
+
 An object has a 'reference count' that is increased or decreased when a
 pointer to the object is copied or deleted; when the reference count
 reaches zero there are no references to the object left and it can be
 removed from the heap.
+
+复制或删除指向对象的指针时，对象的“引用计数”会增加或减少；
+当引用计数达到零时，就没有对对象的引用了，可以将其从堆中删除。
 
 An object has a 'type' that determines what it represents and what kind
 of data it contains.  An object's type is fixed when it is created.
@@ -27,6 +41,10 @@ Types themselves are represented as objects; an object contains a
 pointer to the corresponding type object.  The type itself has a type
 pointer pointing to the object representing the type 'type', which
 contains a pointer to itself!.
+
+一个对象有一个“type”，它决定了它代表什么以及它包含什么样的数据。
+对象的类型在创建时是固定的。type本身被表示为对象(TypeObject)；对象包含指向相应类型对象的指针(ob_type)。
+类型本身有一个类型指针(ob_type)，指向表示类型“type”的对象，该类型包含一个指向自身的指针！
 
 Objects do not float around in memory; once allocated an object keeps
 the same size and address.  Objects that must hold variable-size data
@@ -36,6 +54,12 @@ after allocation.  (These restrictions are made so a reference to an
 object can be simply a pointer -- moving an object would require
 updating all the pointers, and changing an object's size would require
 moving it if there was another object right next to it.)
+
+对象不会在内存中四处浮动；一旦分配，对象将保持相同的大小和地址。
+必须保存 可变对象 可以包含指向对象可变大小部分的指针。
+并非所有类型相同的对象都具有相同的大小；但分配后大小不能改变。
+（这些限制使得对对象的引用可以仅仅是一个指针——移动一个对象需要更新所有指针，
+如果对象旁边有另一个对象，则更改对象的大小需要移动它。）
 
 Objects are always accessed through pointers of the type 'PyObject *'.
 The type 'PyObject' is a structure that only contains the reference count
@@ -47,8 +71,16 @@ used for this (to accommodate for future changes).  The implementation
 of a particular object type can cast the object pointer to the proper
 type and back.
 
+对象总是通过“PyObject*”类型的指针访问。类型“PyObject”是一个仅包含引用计数（ob_refcnt）和类型指针（ob_type）的结构。
+为对象分配的实际内存包含其他数据，这些数据只有在将指针转换为较长结构类型的指针后才能访问。
+这个较长的类型必须以引用计数和类型字段开头（PyObject_HEAD）；应使用宏PyObject_头进行此操作（以适应将来的更改）。
+特定对象类型的实现可以将对象指针强制转换为正确的类型并返回。
+
 A standard interface exists for objects that contain an array of items
 whose size is determined when the object is allocated.
+
+对于包含项目数组（其大小在分配对象时确定）的对象，存在一个标准接口。
+
 */
 
 /* Py_DEBUG implies Py_TRACE_REFS. */
@@ -67,7 +99,10 @@ whose size is determined when the object is allocated.
 
 
 #ifdef Py_TRACE_REFS
-/* Define pointers to support a doubly-linked list of all live heap objects. */
+/* 
+Define pointers to support a doubly-linked list of all live heap objects. 
+定义指针以支持所有活动堆对象的双链接列表。
+*/
 #define _PyObject_HEAD_EXTRA            \
     struct _object *_ob_next;           \
     struct _object *_ob_prev;
@@ -79,7 +114,10 @@ whose size is determined when the object is allocated.
 #define _PyObject_EXTRA_INIT
 #endif
 
-/* PyObject_HEAD defines the initial segment of every PyObject. */
+/* 
+PyObject_HEAD defines the initial segment of every PyObject. 
+PyObject_HEAD定义每个PyObject的初始段
+*/
 #define PyObject_HEAD                   PyObject ob_base;
 
 #define PyObject_HEAD_INIT(type)        \
@@ -94,6 +132,11 @@ whose size is determined when the object is allocated.
  * element, but enough space is malloc'ed so that the array actually
  * has room for ob_size elements.  Note that ob_size is an element count,
  * not necessarily a byte count.
+
+ PyObject_VAR_HEAD定义所有 可变对象 的初始段。
+ 最后声明了一个包含1个元素的数组，但是有足够的空间被malloc，因此数组实际上有空间容纳ob_size的元素。
+ 请注意，ob_size是元素计数，不一定是字节计数。
+
  */
 #define PyObject_VAR_HEAD      PyVarObject ob_base;
 #define Py_INVALID_SIZE (Py_ssize_t)-1
@@ -102,16 +145,21 @@ whose size is determined when the object is allocated.
  * a Python object can be cast to a PyObject*.  This is inheritance built
  * by hand.  Similarly every pointer to a variable-size Python object can,
  * in addition, be cast to PyVarObject*.
+
+ 实际上没有任何东西被声明为PyObject，但指向Python对象的每个指针都可以转换为PyObject*。
+ 这是手动实现继承机制（因为C不是面向对象的语言）。
+ 同样，每个指向 可变对象 的指针也可以强制转换为PyVarObject*。
+
  */
 typedef struct _object {
     _PyObject_HEAD_EXTRA
-    Py_ssize_t ob_refcnt;
-    struct _typeobject *ob_type;
+    Py_ssize_t ob_refcnt;         /* 引用计数 */
+    struct _typeobject *ob_type;  /* 类型指针 */
 } PyObject;
 
 typedef struct {
-    PyObject ob_base;
-    Py_ssize_t ob_size; /* Number of items in variable part */
+    PyObject ob_base;            /* 包含ob_refcnt和ob_type */
+    Py_ssize_t ob_size; /* Number of items in variable part 可变对象可容纳的元素个数，大小可变 */
 } PyVarObject;
 
 #define Py_REFCNT(ob)           (((PyObject*)(ob))->ob_refcnt)
@@ -131,13 +179,30 @@ typedef struct {
        ...
        r = _PyObject_CallMethodId(o, &PyId_foo, "args", ...);
 
+   此结构有助于管理静态字符串。基本用法应该是：
+	_Py_IDENTIFIER(foo);
+    ...
+    r = _PyObject_CallMethodId(o, &PyId_foo, "args", ...);
+   不能这么用：
+    r = PyObject_CallMethod(o, "foo", "args", ...);
+
    PyId_foo is a static variable, either on block level or file level. On first
    usage, the string "foo" is interned, and the structures are linked. On interpreter
    shutdown, all strings are released (through _PyUnicode_ClearStaticStrings).
 
+   PyId_foo是一个静态变量，在块级或文件级。第一次使用时，字符串“foo”被插入，结构被链接。
+   解释器关闭时，释放所有字符串（通过_PyUnicode_ClearStaticStrings）。
+
    Alternatively, _Py_static_string allows choosing the variable name.
    _PyUnicode_FromId returns a borrowed reference to the interned string.
    _PyObject_{Get,Set,Has}AttrId are __getattr__ versions using _Py_Identifier*.
+
+   _PyObject_{Get,Set,Has}AttrId 是使用 _Py_Identifier* 的 __getattr__ 版本 ??
+
+   _Py_Identifier是表示标识符的结构体，标识符即变量名 
+   python字符串有一个方法为：isidentifier()，用来鉴别一个字符串是否能成为标识符
+   >>> '0xyz'.isidentifier() -> False
+   >>> 'xyzABC'.isidentifier() -> True
 */
 typedef struct _Py_Identifier {
     struct _Py_Identifier *next;
@@ -162,8 +227,18 @@ checking for a nil pointer; it should always be implemented except if
 the implementation can guarantee that the reference count will never
 reach zero (e.g., for statically allocated type objects).
 
+类型对象包含一个字符串，其中包含类型名称（对调试有所帮助）、
+分配参数（请参见PyObject_New（）和PyObject_NewVar（））
+以及访问该类型对象的方法。方法是可选的，一个nil指针意味着特定类型的访问不可用于此类型。
+Py_DECREF（）宏使用tp_dealloc方法，而不检查nil指针；
+应该始终实现它，除非实现可以保证引用计数永远不会达到零（例如，对于静态分配的类型对象）。
+
 NB: the methods for certain type groups are now contained in separate
 method blocks.
+
+注意：某些类型组的方法现在包含在单独的方法块中。
+PySequenceMethods\PyNumberMethods\PyMappingMethods...
+
 */
 
 typedef PyObject * (*unaryfunc)(PyObject *);
@@ -178,14 +253,19 @@ typedef int(*ssizessizeobjargproc)(PyObject *, Py_ssize_t, Py_ssize_t, PyObject 
 typedef int(*objobjargproc)(PyObject *, PyObject *, PyObject *);
 
 #ifndef Py_LIMITED_API
-/* buffer interface */
+/* 
+buffer interface 
+缓冲区
+与 Python 解释器公开的大多部数据类型不同，bufferObject不是 PyObject 指针而是简单的 C 结构。
+这使得它们可以非常简单地创建和复制。
+*/
 typedef struct bufferinfo {
-    void *buf;
+    void *buf;            /* 指向由缓冲区字段描述的逻辑结构开始的指针。 */
     PyObject *obj;        /* owned reference */
     Py_ssize_t len;
     Py_ssize_t itemsize;  /* This is Py_ssize_t so it can be
                              pointed to by strides in simple case.*/
-    int readonly;
+    int readonly;         /* 缓冲区是否为只读的指示器。 */
     int ndim;
     char *format;
     Py_ssize_t *shape;
@@ -240,7 +320,10 @@ typedef int (*traverseproc)(PyObject *, visitproc, void *);
 typedef struct {
     /* Number implementations must check *both*
        arguments for proper type and implement the necessary conversions
-       in the slot functions themselves. */
+       in the slot functions themselves. 
+	  
+       Number类型实现必须检查*两个*参数的正确类型，并在slot函数本身中实现必要的转换。
+	*/
 
     binaryfunc nb_add;
     binaryfunc nb_subtract;
@@ -322,7 +405,11 @@ typedef void (*destructor)(PyObject *);
 /* We can't provide a full compile-time check that limited-API
    users won't implement tp_print. However, not defining printfunc
    and making tp_print of a different function pointer type
-   should at least cause a warning in most cases. */
+   should at least cause a warning in most cases. 
+   
+   我们无法提供完整的编译时检查，以确保有限的API用户不会实现tp_print。
+   但是，在大多数情况下，不定义printfunc和使用不同的函数指针类型进行tp_print至少会引起警告。
+ */
 typedef int (*printfunc)(PyObject *, FILE *, int);
 #endif
 typedef PyObject *(*getattrfunc)(PyObject *, char *);
@@ -352,8 +439,8 @@ typedef struct _typeobject {
 
     destructor tp_dealloc;
     printfunc tp_print;
-    getattrfunc tp_getattr;
-    setattrfunc tp_setattr;
+    getattrfunc tp_getattr;      /* 3.8+弃用，改成tp_getattro */
+    setattrfunc tp_setattr;      /* 3.8+弃用，改成tp_setattro */
     PyAsyncMethods *tp_as_async; /* formerly known as tp_compare (Python 2)
                                     or tp_reserved (Python 3) */
     reprfunc tp_repr;
@@ -457,10 +544,16 @@ PyAPI_FUNC(void*) PyType_GetSlot(PyTypeObject*, int);
 #endif
 
 #ifndef Py_LIMITED_API
-/* The *real* layout of a type object when allocated on the heap */
+/* 
+The *real* layout of a type object when allocated on the heap 
+在堆上分配时类型对象的*真实*布局
+*/
 typedef struct _heaptypeobject {
     /* Note: there's a dependency on the order of these members
-       in slotptr() in typeobject.c . */
+       in slotptr() in typeobject.c . 
+	  
+       注意：typeobject.c中的slotptr（）中存在对这些成员顺序的依赖  
+	   */
     PyTypeObject ht_type;
     PyAsyncMethods as_async;
     PyNumberMethods as_number;
@@ -469,7 +562,13 @@ typedef struct _heaptypeobject {
                                       so that the mapping wins when both
                                       the mapping and the sequence define
                                       a given operator (e.g. __getitem__).
-                                      see add_operators() in typeobject.c . */
+                                      see add_operators() in typeobject.c . 
+									  
+									  as_sequence位于as_mapping之后，因此当mapping和sequence都定义了给定的运算符
+									  （例如__getitem__）时，mapping将获胜，即使用mapping的__getitem__方法。
+									  请参见typeobject.c中的add_operators()。
+									  
+									  */
     PyBufferProcs as_buffer;
     PyObject *ht_name, *ht_slots, *ht_qualname;
     struct _dictkeysobject *ht_cached_keys;
@@ -543,11 +642,18 @@ PyAPI_FUNC(int) _PyObject_HasAttrId(PyObject *, struct _Py_Identifier *);
 /* Replacements of PyObject_GetAttr() and _PyObject_GetAttrId() which
    don't raise AttributeError.
 
+   替换不引发AttributeError的PyObject_GetAttr（）和_PyObject_GetAttrId（）。
+
    Return 1 and set *result != NULL if an attribute is found.
    Return 0 and set *result == NULL if an attribute is not found;
    an AttributeError is silenced.
    Return -1 and set *result == NULL if an error other than AttributeError
    is raised.
+
+   如果找到属性，返回1并设置 *result!=NULL
+   如果未找到属性，则返回0并设置 *result==NULL；AttributeError 被沉默。
+   如果引发AttributeError以外的错误，则返回-1并设置 *result==NULL。
+
 */
 PyAPI_FUNC(int) _PyObject_LookupAttr(PyObject *, PyObject *, PyObject **);
 PyAPI_FUNC(int) _PyObject_LookupAttrId(PyObject *, struct _Py_Identifier *, PyObject **);
@@ -577,7 +683,9 @@ PyAPI_FUNC(int) PyObject_CallFinalizerFromDealloc(PyObject *);
 
 #ifndef Py_LIMITED_API
 /* Same as PyObject_Generic{Get,Set}Attr, but passing the attributes
-   dict as the last parameter. */
+   dict as the last parameter. 
+   与PyObject_Generic{Get，Set}Attr相同，但将属性dict作为最后一个参数传递。
+   */
 PyAPI_FUNC(PyObject *)
 _PyObject_GenericGetAttrWithDict(PyObject *, PyObject *, PyObject *, int);
 PyAPI_FUNC(int)
