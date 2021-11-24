@@ -703,6 +703,10 @@ _PyObject_GetBuiltin(const char *name);
    list of strings.  PyObject_Dir(NULL) is like builtins.dir(),
    returning the names of the current locals.  In this case, if there are
    no current locals, NULL is returned, and PyErr_Occurred() is false.
+
+   PyObject_Dir（obj）的行为类似于Python builtins.Dir（obj），返回字符串列表。
+   PyObject_Dir（NULL）类似于 builtins.Dir（），返回当前本地人的名称。
+   在这种情况下，如果没有当前局部变量，并且PyErr_occurrent（）为false， 返回NULL.
 */
 PyAPI_FUNC(PyObject *) PyObject_Dir(PyObject *);
 
@@ -716,6 +720,7 @@ PyAPI_FUNC(void) Py_ReprLeave(PyObject *);
 
 /*
 `Type flags (tp_flags)
+ 类型标志
 
 These flags are used to extend the type structure in a backwards-compatible
 fashion. Extensions can use the flags to indicate (and test) when a given
@@ -723,18 +728,32 @@ type structure contains a new feature. The Python core will use these when
 introducing new functionality between major revisions (to avoid mid-version
 changes in the PYTHON_API_VERSION).
 
+这些标志用于以向后兼容的方式扩展类型结构.
+扩展可以使用标志指示（和测试）给定的包含一个新功能的类型结构。
+Python核心将在主要版本之间引入新功能时使用这些标志（以避免PYTHON_API_VERSION中mid-version的更改）。
+
+
 Arbitration of the flag bit positions will need to be coordinated among
 all extension writers who publicly release their extensions (this will
 be fewer than you might expect!)..
+
+仲裁的标志位位置会被用来协调所有公开发布他们的扩展的扩展作者(这将比你想象的要少!).
 
 Most flags were removed as of Python 3.0 to make room for new flags.  (Some
 flags are not for backwards compatibility but to indicate the presence of an
 optional feature; these flags remain of course.)
 
+大多数标记在Python 3.0时被删除，以便为新标记腾出空间。
+(一些标记不是为了向后兼容，而是指示存在可选特性;当然，这些标记还在。)
+
 Type definitions should use Py_TPFLAGS_DEFAULT for their tp_flags value.
 
 Code can use PyType_HasFeature(type_ob, flag_value) to test whether the
 given type object has a specified feature.
+
+类型定义的tp_flags值应使用Py_TPFLAGS_DEFAULT。
+
+代码可以使用PyType_HasFeature(type_ob, flag_value)来测试给定类型对象是否具有指定的功能。
 */
 
 /* Set if the type object is dynamically allocated */
@@ -807,11 +826,23 @@ The macro _Py_NewReference(op) initialize reference counts to 1, and
 in special builds (Py_REF_DEBUG, Py_TRACE_REFS) performs additional
 bookkeeping appropriate to the special build.
 
+Py_INCREF(op)和Py_DECREF(op)宏用于递增或递减参考计数。
+Py_DECREF在以下情况下调用对象的deallocator函数：
+  refcount降为0；
+对于不包含对其他对象或堆内存的引用的对象，这可以是标准的函数free（）。
+两个宏都在任何允许空表达式的位置使用。
+这个参数不能是一个错误空指针。如果它可能为空，请改用Py_XINCREF/Py_XDECREF。
+宏_Py_NewReference（op）将引用计数初始化为1，
+然后在特殊构建（Py_REF_DEBUG，Py_TRACE_REFS）中，执行额外的适合特殊构造的簿记。
+
 We assume that the reference count field can never overflow; this can
 be proven when the size of the field is the same as the pointer size, so
 we ignore the possibility.  Provided a C int is at least 32 bits (which
 is implicitly assumed in many parts of this code), that's enough for
 about 2**31 references to an object.
+
+我们假设引用计数域永远不会溢出;这可以在字段的大小与指针的大小相同时证明，所以我们忽略了这种可能性。
+如果C int至少是32位(这在这段代码的许多部分中隐含地假定了)，这就足够了因为一个对象大约有2**31个引用。
 
 XXX The following became out of date in Python 2.2, but I'm not sure
 XXX what the full truth is now.  Certainly, heap-allocated type objects
@@ -821,6 +852,13 @@ is not considered to be a reference to the type object, to save
 complications in the deallocation function.  (This is actually a
 decision that's up to the implementer of each new type so if you want,
 you can count such references to the type object.)
+
+以下内容在Python 2.2中已经过时，但我不确定现在的全部情况是什么。
+当然，堆分配的类型对象可以并且应该被释放。
+类型对象永远不应该被释放;
+对象中的类型指针不认为是对类型对象的引用，来解决回收功能的复杂性。
+(这实际上是取决于每个新类型的实现者，所以如果你想，您可以计数对类型对象的此类引用。)
+
 */
 
 /* First define a pile of simple helper macros, one set per special
@@ -831,6 +869,13 @@ you can count such references to the type object.)
  * Trust me <wink>:  while painful, this is 20x easier to understand than,
  * e.g, defining _Py_NewReference five different times in a maze of nested
  * #ifdefs (we used to do that -- it was impenetrable).
+
+ 首先定义一堆简单的辅助宏，每个特殊宏一组建造符号。
+ 这些宏会扩展到显而易见的事情，或者扩展到nothing当特殊模式无效时。
+ 主宏可以迟些定义不过只能一次，但可以扩展为不同的宏，这取决于特殊构建选项有效或无效。
+ 相信我<wink>：虽然痛苦，但这比，例如，在一个迷宫式的嵌套结构中定义五次_Py_NewReference，理解起来要简单20倍
+ #ifdefs（我们过去经常这样做——它是无法穿透的）。
+
  */
 #ifdef Py_REF_DEBUG
 PyAPI_DATA(Py_ssize_t) _Py_RefTotal;
@@ -933,6 +978,17 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
  * down.  This has in fact been a rich historic source of miserable (rare &
  * hard-to-diagnose) segfaulting (and other) bugs.
  *
+
+ 安全地减少'op'并将'op'设置为NULL，在tp_clear和tp_dealoc的实现中尤其有用。
+ 注意：明显的代码可能会是致命的：
+     Py_XDECREF(op);
+     op = NULL;
+ 通常，`op`类似于self->containee，`self`是用它的“containee”成员完成的。
+ 在上面的代码序列中，假设containee'非NULL，引用计数为1。其参考数量在第一行下降为0，
+ 它可以触发任意数量的代码，可能包括终结器（如__del__方法或weakref回调）
+ 这反过来可以释放GIL并允许其他线程运行。
+ 这类代码甚至可能再次调用“self”的方法，或导致循环gc触发。
+
  * The safe way is:
  *
  *      Py_CLEAR(op);
@@ -946,6 +1002,17 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
  * one of those can't cause problems -- but in part that relies on that
  * Python integers aren't currently weakly referencable.  Best practice is
  * to use Py_CLEAR() even if you can't think of a reason for why you need to.
+
+ 安全的方式是：
+     Py_CLEAR(op);
+ 这种方式安排在递减之前将'op'设置为NULL'，这样任何代码由于“op”被拆毁的副作用而触发，
+ 不用再相信'op'指向一个有效的对象。
+ 
+ 有些情况下，使用朴素的代码是安全的，但它们是脆弱的。
+ 例如，如果'op'指向一个Python整数，你就知道摧毁其中之一不会引起问题，
+ 但部分原因在于此Python整数当前不可弱引用。
+ 最佳方式是使用Py_CLEAR（），即使你想不出需要使用Py_CLEAR（）的原因。
+
  */
 #define Py_CLEAR(op)                            \
     do {                                        \
@@ -973,13 +1040,16 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
 
 #ifndef Py_LIMITED_API
 /* Safely decref `op` and set `op` to `op2`.
+   安全地取消'op'并将'op'设置为'op2'。
  *
  * As in case of Py_CLEAR "the obvious" code can be deadly:
+   与Py_CLEAR的情况一样，“明显的”代码可能是致命的：
  *
  *     Py_DECREF(op);
  *     op = op2;
  *
  * The safe way is:
+   安全的方式是：
  *
  *      Py_SETREF(op, op2);
  *
@@ -987,8 +1057,13 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
  * triggered as a side-effect of `op` getting torn down no longer believes
  * `op` points to a valid object.
  *
+   这种安排在递减之前将“op”设置为“op2”，以便任何代码可以因为“op”被拆下的副作用而触发，
+   不用相信'op'指向一个有效的对象。
+
  * Py_XSETREF is a variant of Py_SETREF that uses Py_XDECREF instead of
  * Py_DECREF.
+   Py_XSETREF是Py_SETREF的一个变体，它使用Py_XDECREF而不是Py_DECREF。
+
  */
 
 #define Py_SETREF(op, op2)                      \
@@ -1010,6 +1085,8 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
 /*
 These are provided as conveniences to Python runtime embedders, so that
 they can have object code that is not dependent on Python compilation flags.
+
+这些都是为Python运行时嵌入程序提供的便利，因此它们可以具有不依赖于Python编译标志的对象代码。
 */
 PyAPI_FUNC(void) Py_IncRef(PyObject *);
 PyAPI_FUNC(void) Py_DecRef(PyObject *);
@@ -1024,6 +1101,12 @@ _Py_NoneStruct is an object of undefined type which can be used in contexts
 where NULL (nil) is not suitable (since NULL often means 'error').
 
 Don't forget to apply Py_INCREF() when returning this value!!!
+
+_Py_NoneStruct是未定义类型的对象，可在上下文中使用
+其中NULL（nil）不合适（因为NULL通常表示“错误”）。
+
+返回此值时不要忘记应用Py_incremf（）！！！
+
 */
 PyAPI_DATA(PyObject) _Py_NoneStruct; /* Don't use this directly */
 #define Py_None (&_Py_NoneStruct)
@@ -1034,6 +1117,8 @@ PyAPI_DATA(PyObject) _Py_NoneStruct; /* Don't use this directly */
 /*
 Py_NotImplemented is a singleton used to signal that an operation is
 not implemented for a given type combination.
+
+Py_NotImplemented是一个单例，用于表示操作对给定类型组合没有被实现。
 */
 PyAPI_DATA(PyObject) _Py_NotImplementedStruct; /* Don't use this directly */
 #define Py_NotImplemented (&_Py_NotImplementedStruct)
@@ -1079,16 +1164,21 @@ PyAPI_DATA(int) _Py_SwappedOp[];
 
 /*
 More conventions
+更多惯例
 ================
 
 Argument Checking
+参数检查
 -----------------
 
 Functions that take objects as arguments normally don't check for nil
 arguments, but they do check the type of the argument, and return an
 error if the function doesn't apply to the type.
 
+将对象作为参数的函数通常不检查nil参数，但它们会检查参数的类型，并在函数不应用于类型时返回错误。
+
 Failure Modes
+失效模式
 -------------
 
 Functions may fail for a variety of reasons, including running out of
@@ -1101,10 +1191,19 @@ Callers should always check for errors before using the result.  If
 an error was set, the caller must either explicitly clear it, or pass
 the error on to its caller.
 
+函数可能由于各种原因而失败，包括耗尽内存空间。
+这通过两种方式与调用者通信：
+错误字符串设置（请参见errors.h），
+以及函数结果不同：函数通常返回一个指针，失败时返回NULL，
+函数返回整数返回值-1（也可能是合法的返回值！），以及其他函数返回0表示成功，返回-1表示失败。
+调用方在使用结果之前应始终检查错误。如果设置了错误，调用方必须明确清除该错误，或传递该错误将传递给其调用方。
+
 Reference Counts
+引用计数
 ----------------
 
 It takes a while to get used to the proper usage of reference counts.
+需要一段时间才能习惯引用计数的正确用法。
 
 Functions that create an object set the reference count to 1; such new
 objects must be stored somewhere or destroyed again with Py_DECREF().
@@ -1118,27 +1217,46 @@ the reference count, since most frequently the object is only looked at
 quickly.  Thus, to retrieve an object and store it again, the caller
 must call Py_INCREF() explicitly.
 
+创建对象的函数将引用计数设置为1；如此新对象必须使用Py_DECREF（）将对象存储在某处或再次销毁。
+一些“存储”对象的函数，如PyTuple_SetItem（）和PyList_SetItem（），
+不会增加对象的引用计数，因为经常使用的是存储一个新的对象。
+“检索”对象的函数，例如PyTuple_GetItem（）和PyDict_GetItemString（）
+不会增加引用计数，因为最常见的情况是只迅速地查看对象。
+因此，要检索对象并再次存储它，调用方必须显式调用Py_INCREF（）。
+
 NOTE: functions that 'consume' a reference count, like
 PyList_SetItem(), consume the reference even if the object wasn't
 successfully stored, to simplify error handling.
+
+注意：“使用”引用计数的函数，如PyList_SetItem（），即使对象没有成功存储，要简化错误处理。
 
 It seems attractive to make other functions that take an object as
 argument consume a reference count; however, this may quickly get
 confusing (even the current practice is already confusing).  Consider
 it carefully, it may save lots of calls to Py_INCREF() and Py_DECREF() at
 times.
+
+制作以对象为参数消耗引用计数的其他函数似乎很有吸引力；然而，这可能会很快令人困惑（即使是目前的做法也已经令人困惑）。
+仔细考虑一下，它可能会节省大量对Py_INCREF（）和Py_DECREF（）的调用。
+
 */
 
 
 /* Trashcan mechanism, thanks to Christian Tismer.
-
+   垃圾桶机制
 When deallocating a container object, it's possible to trigger an unbounded
 chain of deallocations, as each Py_DECREF in turn drops the refcount on "the
 next" object in the chain to 0.  This can easily lead to stack faults, and
 especially in threads (which typically have less stack space to work with).
 
+释放容器对象时，可能会触发一个无界的回收链，每个Py_DECREF依次将链中的“下一个”对象设置为0。
+这很容易导致堆栈故障，特别是在线程中（通常具有较少的堆栈空间）。
+
 A container object that participates in cyclic gc can avoid this by
 bracketing the body of its tp_dealloc function with a pair of macros:
+
+参与循环gc的容器对象可以通过用一对宏将其tp_dealloc函数体括起来来避免这个问题：
+如下：
 
 static void
 mytype_dealloc(mytype *p)
@@ -1157,6 +1275,9 @@ CAUTION:  Never return from the middle of the body!  If the body needs to
 call, and goto it.  Else the call-depth counter (see below) will stay
 above 0 forever, and the trashcan will never get emptied.
 
+注意：切勿从代码中部返回！如果主体需要“早点退出”，在Py_TRASHCAN_SAFE_END调用前贴上标签，然后开始。
+否则，调用深度计数器（见下文）将保持永远高于0，垃圾桶永远不会被清空。
+
 How it works:  The BEGIN macro increments a call-depth counter.  So long
 as this counter is small, the body of the deallocator is run directly without
 further ado.  But if the counter gets large, it instead adds p to a list of
@@ -1164,11 +1285,20 @@ objects to be deallocated later, skips the body of the deallocator, and
 resumes execution after the END macro.  The tp_dealloc routine then returns
 without deallocating anything (and so unbounded call-stack depth is avoided).
 
+工作原理：BEGIN宏递增调用深度计数器。由于此计数器很小，deallocator的主体直接运行，而无需进一步的ado。
+但是如果计数器变大，它会稍后将p添加到需要回收的对象列表，跳过deallocator的主体，然后在结束宏后恢复执行。
+然后，tp_dealloc例程返回，无需取消分配任何内容（从而避免了无限调用堆栈深度）。
+
 When the call stack finishes unwinding again, code generated by the END macro
 notices this, and calls another routine to deallocate all the objects that
 may have been added to the list of deferred deallocations.  In effect, a
 chain of N deallocations is broken into (N-1)/(PyTrash_UNWIND_LEVEL-1) pieces,
 with the call stack never exceeding a depth of PyTrash_UNWIND_LEVEL.
+
+当调用堆栈再次完成展开时，END宏生成的代码会注意到这一点，并调用另一个例程来取消分配
+那些可能已添加到延迟解除分配列表中的对象。实际上，一个N个回收链分为（N-1）/（PyTrash_UNWIND_LEVEL-1）个部分，
+调用堆栈的深度永远不会超过PyTrash_UNWIND_LEVEL。
+
 */
 
 #ifndef Py_LIMITED_API
