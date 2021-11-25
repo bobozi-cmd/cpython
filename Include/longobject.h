@@ -5,9 +5,12 @@ extern "C" {
 #endif
 
 
-/* Long (arbitrary precision) integer object interface */
+/* 
+Long (arbitrary precision) integer object interface 
+长整数对象接口（任意精度）
+*/
 
-typedef struct _longobject PyLongObject; /* Revealed in longintrepr.h */
+typedef struct _longobject PyLongObject; /* Revealed in longintrepr.h 在longintrepr.h中显示  */
 
 PyAPI_DATA(PyTypeObject) PyLong_Type;
 
@@ -32,10 +35,16 @@ PyAPI_FUNC(int) _PyLong_AsInt(PyObject *);
 PyAPI_FUNC(PyObject *) PyLong_GetInfo(void);
 
 /* It may be useful in the future. I've added it in the PyInt -> PyLong
-   cleanup to keep the extra information. [CH] */
+   cleanup to keep the extra information. [CH] 
+   
+   在将来这或许会变得有用。我在PyInt->PyLong转换中添加了它，以保留额外的信息。
+
+   */
 #define PyLong_AS_LONG(op) PyLong_AsLong(op)
 
-/* Issue #1983: pid_t can be longer than a C long on some systems */
+/* Issue #1983: pid_t can be longer than a C long on some systems 
+   问题 #1983：在某些系统中pid_t的长度可能超过C的long
+*/
 #if !defined(SIZEOF_PID_T) || SIZEOF_PID_T == SIZEOF_INT
 #define _Py_PARSE_PID "i"
 #define PyLong_FromPid PyLong_FromLong
@@ -76,7 +85,11 @@ PyAPI_DATA(unsigned char) _PyLong_DigitValue[256];
    0.0 if and only if the input is 0 (in which case, e and x are both
    zeroes); otherwise, 0.5 <= abs(x) < 1.0.  On overflow, which is
    possible if the number of bits doesn't fit into a Py_ssize_t, sets
-   OverflowError and returns -1.0 for x, 0 for e. */
+   OverflowError and returns -1.0 for x, 0 for e. 
+   返回一个双精度浮点数x和一个指数e，使得真值约等于x * 2**e。e大于等于0. x为0.0
+   当且仅当输入为0（在这种情况下，e与x都为0）；否则x的绝对值大于等于0.5且小于1.0。（0.5<=abs（x）<1.0）
+   在溢出时（如果位数不符合Py_ssize_t的话这是可能发生的），设置为OverflowError并返回x为-1.0，e为0。
+   */
 #ifndef Py_LIMITED_API
 PyAPI_FUNC(double) _PyLong_Frexp(PyLongObject *a, Py_ssize_t *e);
 #endif
@@ -103,6 +116,10 @@ PyAPI_FUNC(PyObject *) _PyLong_FromBytes(const char *, Py_ssize_t, int);
 /* _PyLong_Sign.  Return 0 if v is 0, -1 if v < 0, +1 if v > 0.
    v must not be NULL, and must be a normalized long.
    There are no error cases.
+   _PyLong_Sign
+   若v为0则返回0，v小于0则减1，大于0则加1。
+   v不能为空，并且必须是一个标准化的长整型。
+   没有错误案例。
 */
 PyAPI_FUNC(int) _PyLong_Sign(PyObject *v);
 
@@ -113,6 +130,11 @@ PyAPI_FUNC(int) _PyLong_Sign(PyObject *v);
    v must not be NULL, and must be a normalized long.
    (size_t)-1 is returned and OverflowError set if the true result doesn't
    fit in a size_t.
+   _PyLong_NumBits
+   返回表示长字符串绝对值所需的位数。
+   例如，1和-1会返回1，2和-2会返回2，3和-3会返回2。0会返回0。
+   v不能为空，并且必须是一个标准化的长整型。
+   如果真结果不符合size_t，返回(size_t)-1，设置为溢出错误。
 */
 PyAPI_FUNC(size_t) _PyLong_NumBits(PyObject *v);
 
@@ -121,6 +143,11 @@ PyAPI_FUNC(size_t) _PyLong_NumBits(PyObject *v);
    in the case of a tie.  Return (q, r), where r = a - q*b.  The remainder r
    will satisfy abs(r) <= abs(b)/2, with equality possible only if q is
    even.
+
+   _PyLong_DivmodNear
+   给定整数a和b，计算最接近的整数q为精确商a/b，四舍五入到最近的偶数整数。
+   返回（q，r），其中r=a-q*b。余数r将满足abs（r）<=abs（b）/2
+
 */
 PyAPI_FUNC(PyObject *) _PyLong_DivmodNear(PyObject *, PyObject *);
 
@@ -136,6 +163,16 @@ PyAPI_FUNC(PyObject *) _PyLong_DivmodNear(PyObject *, PyObject *);
    Error returns:
    + Return NULL with the appropriate exception set if there's not
      enough memory to create the Python int.
+
+	_PyLong_FromByteArray
+	 将n个无符号字节作为二进制整数查看以256为基数，并返回具有相同数值的int类型的值。
+	 如果n为0，则整数为0
+	 如果little_endian为1/true，则字节[n-1]为MSB，字节[0]为LSB；
+	 else（little_endian为0/false）字节[0]为MSB，字节[n-1]为LSB。
+	 如果is_signed为0/false，则将字节视为非负整数。
+	 如果is_signed为1/true，则将字节视为2的补码整数。
+	 如果MSB的位0x80为空，则为非负；如果已设置，则为负。
+	 如果没有异常，则返回NULL并设置相应的异常
 */
 PyAPI_FUNC(PyObject *) _PyLong_FromByteArray(
     const unsigned char* bytes, size_t n,
@@ -159,6 +196,17 @@ PyAPI_FUNC(PyObject *) _PyLong_FromByteArray(
      fit in n; or if is_signed is 1, v < 0, and n is just 1 bit shy of
      being large enough to hold a sign bit.  OverflowError is set in this
      case, but bytes holds the least-significant n bytes of the true value.
+
+	_PyLong_AsByteArray
+	 转换长序列的最低有效8*n位v到一个基256整数，存储在数组字节中。通常返回0，错误时返回-1。
+	 如果little_endian为1/true，则将MSB存储在字节[n-1]处，将LSB存储在字节[0]；else（little_endian为0/false）将MSB存储在字节[0]处，并字节[n-1]处的LSB。
+	 如果is_signed为0/false，则v<0为错误；else（v>=0）n字节已填充，并且MSB的位0x80没有任何特殊之处。
+	 若is_signed为1/true，则字节用2的补码填充v值的表示。MSB的位0x80是符号位。
+	 错误返回（-1）：
+	 +符号为0且v<0。在这种情况下设置了TypeError，字节没有改变。
+	 +n不足以容纳v的全部数学值。例如，if_signed为0且v中的数字多于适合n；或者如果符号为1，v<0，n只差一点大到足以容纳一个符号位。
+	 此字段中设置了OverflowerError大小写为，但字节保留真值的最低有效n字节。
+
 */
 PyAPI_FUNC(int) _PyLong_AsByteArray(PyLongObject* v,
     unsigned char* bytes, size_t n,
@@ -168,11 +216,19 @@ PyAPI_FUNC(int) _PyLong_AsByteArray(PyLongObject* v,
    using the nb_int slot, if available.  Raise TypeError if either the
    nb_int slot is not available or the result of the call to nb_int
    returns something not of type int.
+
+   _PyLong_FromNbInt
+   将给定对象转换为PyLongObject使用nb_int插槽。
+   如果nb_int插槽不可用或调用nb_int的结果返回非int类型的内容。
 */
 PyAPI_FUNC(PyLongObject *)_PyLong_FromNbInt(PyObject *);
 
 /* _PyLong_Format: Convert the long to a string object with given base,
-   appending a base prefix of 0[box] if base is 2, 8 or 16. */
+   appending a base prefix of 0[box] if base is 2, 8 or 16. 
+   
+   _PyLong_Format
+   将长字符串对象转换为具有给定基的字符串对象，如果基数为2、8或16，则追加基数前缀0[box]。
+*/
 PyAPI_FUNC(PyObject *) _PyLong_Format(PyObject *obj, int base);
 
 PyAPI_FUNC(int) _PyLong_FormatWriter(
@@ -189,7 +245,9 @@ PyAPI_FUNC(char*) _PyLong_FormatBytesWriter(
     int alternate);
 
 /* Format the object based on the format_spec, as defined in PEP 3101
-   (Advanced String Formatting). */
+   (Advanced String Formatting). 
+   根据PEP 3101中定义的格式规范格式化对象
+   */
 PyAPI_FUNC(int) _PyLong_FormatAdvancedWriter(
     _PyUnicodeWriter *writer,
     PyObject *obj,
@@ -200,12 +258,17 @@ PyAPI_FUNC(int) _PyLong_FormatAdvancedWriter(
 
 /* These aren't really part of the int object, but they're handy. The
    functions are in Python/mystrtoul.c.
+   这些实际上不是int对象的一部分，但它们很方便。
+   这个函数的格式为Python/mystrtoul.c
  */
 PyAPI_FUNC(unsigned long) PyOS_strtoul(const char *, char **, int);
 PyAPI_FUNC(long) PyOS_strtol(const char *, char **, int);
 
 #ifndef Py_LIMITED_API
-/* For use by the gcd function in mathmodule.c */
+/* 
+For use by the gcd function in mathmodule.c 
+供mathmodule.c中的gcd函数使用
+*/
 PyAPI_FUNC(PyObject *) _PyLong_GCD(PyObject *, PyObject *);
 #endif /* !Py_LIMITED_API */
 
