@@ -1,21 +1,29 @@
-/* Dictionary object implementation using a hash table */
+/* 
+Dictionary object implementation using a hash table 
+使用哈希表实现字典对象
+*/
 
 /* The distribution includes a separate file, Objects/dictnotes.txt,
    describing explorations into dictionary design and optimization.
    It covers typical dictionary use patterns, the parameters for
    tuning dictionaries, and several ideas for possible optimizations.
+   此发行版包括一个单独的文件Objects/dictnotes.txt，
+   描述字典设计和优化的探索。
+   它涵盖了典型的字典使用模式，以及
+   调优字典，以及一些可能的优化想法。
 */
 
 /* PyDictKeysObject
 
 This implements the dictionary's hashtable.
-
+这实现了字典的哈希表。
 As of Python 3.6, this is compact and ordered. Basic idea is described here:
+从Python3.6开始，它是紧凑有序的。基本思路如下：
 * https://mail.python.org/pipermail/python-dev/2012-December/123028.html
 * https://morepypy.blogspot.com/2015/01/faster-more-memory-efficient-and-more.html
 
 layout:
-
+布局：
 +---------------+
 | dk_refcnt     |
 | dk_size       |
@@ -32,7 +40,11 @@ layout:
 
 dk_indices is actual hashtable.  It holds index in entries, or DKIX_EMPTY(-1)
 or DKIX_DUMMY(-2).
+dk_indices是实际的哈希表。它将索引保存在条目中，或者DKIX_EMPTY（-1）
+或DKIX_DUMMY（-2）。
+
 Size of indices is dk_size.  Type of each index in indices is vary on dk_size:
+指数的大小为dk_size。索引中每个索引的类型因dk_size而异：
 
 * int8  for          dk_size <= 128
 * int16 for 256   <= dk_size <= 2**15
@@ -41,38 +53,67 @@ Size of indices is dk_size.  Type of each index in indices is vary on dk_size:
 
 dk_entries is array of PyDictKeyEntry.  Its size is USABLE_FRACTION(dk_size).
 DK_ENTRIES(dk) can be used to get pointer to entries.
+dk_entries是PyDictKeyEntry的数组。其大小为USABLE_FRACTION(dk_size)。
+DK_ENTRIES(dk) 可用于获取指向条目的指针。
 
 NOTE: Since negative value is used for DKIX_EMPTY and DKIX_DUMMY, type of
 dk_indices entry is signed integer and int16 is used for table which
 dk_size == 256.
+
+注：由于DKIX_EMPTY和DKIX_DUMMY使用负值，因此
+dk_indices是有符号整数，int16用于
+dk_size==256。
+
 */
 
 
 /*
 The DictObject can be in one of two forms.
+对象可以是两种形式之一。
 
 Either:
   A combined table:
     ma_values == NULL, dk_refcnt == 1.
     Values are stored in the me_value field of the PyDictKeysObject.
+要么：
+  组合表：
+	ma_值==NULL，dk_refcnt==1。
+	值存储在PyDictKeysObject的me_值字段中。
 Or:
   A split table:
     ma_values != NULL, dk_refcnt >= 1
     Values are stored in the ma_values array.
     Only string (unicode) keys are allowed.
     All dicts sharing same key must have same insertion order.
+或：
+  拆分表：
+	ma_values！=NULL，dk_refcnt>=1
+	值存储在ma_值数组中。
+	只允许使用字符串（unicode）键。
+	共享同一密钥的所有DICT必须具有相同的插入顺序。
 
 There are four kinds of slots in the table (slot is index, and
 DK_ENTRIES(keys)[index] if index >= 0):
+
+表中有四种索引（slot是索引，和 DK_ENTRIES(keys)[index] if index >= 0)：
 
 1. Unused.  index == DKIX_EMPTY
    Does not hold an active (key, value) pair now and never did.  Unused can
    transition to Active upon key insertion.  This is each slot's initial state.
 
+1.Unused。 index == DKIX_EMPTY
+不保存现在活跃（键、值）对，而且从未保存过。未使用的可以
+在插入密钥时转换为活动。这是每个索引的初始状态。
+
 2. Active.  index >= 0, me_key != NULL and me_value != NULL
    Holds an active (key, value) pair.  Active can transition to Dummy or
    Pending upon key deletion (for combined and split tables respectively).
    This is the only case in which me_value != NULL.
+
+2. Active.  index >= 0, me_key != NULL and me_value != NULL
+   Holds an active (key, value) pair.  在删除键时，活动表可以转换为虚拟表或
+   挂起表（分别用于组合表和拆分表）。
+   只有在这种情况下， me_value != NULL.
 
 3. Dummy.  index == DKIX_DUMMY  (combined only)
    Previously held an active (key, value) pair, but that was deleted and an
@@ -81,24 +122,43 @@ DK_ENTRIES(keys)[index] if index >= 0):
    else the probe sequence in case of collision would have no way to know
    they were once active.
 
+3. Dummy.  index == DKIX_DUMMY  (combined only)
+   以前持有一个活动（键、值）对，但该对已被删除，且
+   活动对尚未覆盖索引。  插入关键点后，虚拟对象可以转换为
+   活动状态。虚拟索引不能再次使用，
+   否则发生碰撞时的探测序列将无法知道它们
+   曾经处于活动状态。
+
 4. Pending. index >= 0, key != NULL, and value == NULL  (split only)
    Not yet inserted in split-table.
+
+4. Pending. index >= 0, key != NULL, and value == NULL  (split only)
+   尚未插入拆分表中。
 */
 
 /*
 Preserving insertion order
+保持插入顺序
 
 It's simple for combined table.  Since dk_entries is mostly append only, we can
 get insertion order by just iterating dk_entries.
+这对于组合表来说很简单。由于dk_条目大多是仅附加的，因此我们可以
+只需迭代dk_entries即可获得插入顺序。
 
 One exception is .popitem().  It removes last item in dk_entries and decrement
 dk_nentries to achieve amortized O(1).  Since there are DKIX_DUMMY remains in
 dk_indices, we can't increment dk_usable even though dk_nentries is
 decremented.
+一个例外是.popitem（）。它将删除dk_entries中的最后一项并减少
+达到摊销O（1）的dk_nentries。因为在dk_indices中还有DKIX_DUMMY，
+所以即使dk_nentries减少，我们也不能增加dk_usable。
 
 In split table, inserting into pending entry is allowed only for dk_entries[ix]
 where ix == mp->ma_used. Inserting into other index and deleting item cause
 converting the dict to the combined table.
+在拆分表中，只允许在使用ix==mp->ma_used的dk_entries[ix]中插入挂起条目。
+插入到其他索引和删除项会导致将dict转换为组合表。
+
 */
 
 /* PyDict_MINSIZE is the starting size for any new dict.
@@ -107,6 +167,12 @@ converting the dict to the combined table.
  * dicts created to pass keyword arguments).
  * Making this 8, rather than 4 reduces the number of resizes for most
  * dictionaries, without any significant extra memory use.
+
+PyDict_MINSIZE是任何新dict的起始尺寸。
+8允许不超过5个活动条目的DICT；实验表明，
+这对于大多数dict（主要由为传递关键字参数而创建的通常较小的dict组成）来说已经足够了。
+将其设为8而不是4可以减少大多数情况下的大小调整次数
+字典，没有任何明显的额外内存使用。
  */
 #define PyDict_MINSIZE 8
 
@@ -126,6 +192,10 @@ To ensure the lookup algorithm terminates, there must be at least one Unused
 slot (NULL key) in the table.
 To avoid slowing down lookups on a near-full table, we resize the table when
 it's USABLE_FRACTION (currently two-thirds) full.
+要确保查找算法终止，必须至少有一个未使用的
+表中的插槽（空键）。
+为了避免在几乎满的表上减慢查找速度，我们在
+它的可用部分（目前为三分之二）已满。
 */
 
 #define PERTURB_SHIFT 5
@@ -135,6 +205,10 @@ Major subtleties ahead:  Most hash schemes depend on having a "good" hash
 function, in the sense of simulating randomness.  Python doesn't:  its most
 important hash functions (for ints) are very regular in common
 cases:
+主要的微妙之处：大多数散列方案依赖于拥有一个“好”的散列
+函数，在模拟随机性的意义上。Python没有：它最
+重要的散列函数（对于int）通常是非常规则的
+案例：
 
   >>>[hash(i) for i in range(4)]
   [0, 1, 2, 3]
@@ -145,12 +219,23 @@ are no collisions at all for dicts indexed by a contiguous range of ints. So
 this gives better-than-random behavior in common cases, and that's very
 desirable.
 
+这不一定是坏事！相反，在尺寸为2**i的表格中
+作为初始表索引的低阶i位非常快，并且
+对于由连续整数范围索引的DICT，根本没有冲突。所以
+这比普通情况下的随机行为要好，这是非常可取的。
+
 OTOH, when collisions occur, the tendency to fill contiguous slices of the
 hash table makes a good collision resolution strategy crucial.  Taking only
 the last i bits of the hash code is also vulnerable:  for example, consider
 the list [i << 16 for i in range(20000)] as a set of keys.  Since ints are
 their own hash codes, and this fits in a dict of size 2**15, the last 15 bits
  of every hash code are all 0:  they *all* map to the same table index.
+
+  On the Other Hand(另一方面)，当发生冲突时，填充哈希表连续切片的趋势使得良好的冲突
+ 解决策略至关重要。仅使用哈希代码的最后一个位也很脆弱：
+ 例如，将列表[i＜16（范围i（20000））]视为一组密钥。
+ 由于int是它们自己的哈希代码，并且适合大小为2**15的dict，
+ 因此每个哈希代码的最后15位都是0：它们*全部*映射到同一个表索引。
 
 But catering to unusual cases should not slow the usual ones, so we just take
 the last i bits anyway.  It's up to collision resolution to do the rest.  If
@@ -159,8 +244,16 @@ out, we usually do -- the table load factor is kept under 2/3, so the odds
 are solidly in our favor), then it makes best sense to keep the initial index
 computation dirt cheap.
 
+但是，迎合不寻常的情况不应该减缓通常的情况，所以我们只是采取
+最后的i位无论如何。剩下的事情由碰撞解决方案决定。如果
+我们*通常*在第一次尝试时就找到了我们要寻找的键（事实证明，
+我们通常是这样做的——表负载因子保持在2/3以下，
+因此可能性非常有利于我们），那么最好保持初始索引计算的低成本。
+
+
 The first half of collision resolution is to visit table indices via this
 recurrence:
+冲突解决的前半部分是通过此循环访问表索引：
 
     j = ((5*j) + 1) mod 2**i
 
@@ -173,6 +266,13 @@ actually *good* in the common cases where hash keys are consecutive.  In an
 example that's really too small to make this entirely clear, for a table of
 size 2**3 the order of indices is:
 
+对于范围（2**i）中的任何初始j，重复该2**i次将生成范围（2**i）中的每个
+int，精确一次（请参阅随机数生成的任何文本以获取证明）。
+这本身并没有多大帮助：就像线性探测（在每次循环跳闸时设置j+=1或j-=1）一样，
+它以固定顺序扫描表条目。这将是不好的，除了这不是我们唯一做的事情，
+而且在散列键是连续的常见情况下，它实际上是“好的”。在一个非常小的示例
+中，对于大小为2**3的表，索引的顺序是：
+
     0 -> 1 -> 6 -> 7 -> 4 -> 5 -> 2 -> 3 -> 0 [and here it's repeating]
 
 If two things come in at index 5, the first place we look after is index 2,
@@ -182,9 +282,18 @@ is the *same* as the order consecutive keys are likely to arrive.  But it's
 extremely unlikely hash codes will follow a 5*j+1 recurrence by accident,
 and certain that consecutive hash codes do not.
 
+如果有两个东西出现在索引5中，我们首先关注的是索引2，
+而不是索引6，因此如果有另一个东西出现在索引6中，那么在索引5中的碰撞并没有伤害到它。
+在这种情况下，线性探测是致命的，因为固定探测顺序与连续密钥可能
+到达的顺序相同。但散列码不太可能在5*j+1重复出现之后意外出现，
+而且连续的散列码肯定不会。
+
 The other half of the strategy is to get the other bits of the hash code
 into play.  This is done by initializing a (unsigned) vrbl "perturb" to the
 full hash code, and changing the recurrence to:
+
+该策略的另一半是让哈希代码的其他位发挥作用。
+通过将（无符号）vrbl“扰动”初始化为完整散列码，并将循环更改为：
 
     perturb >>= PERTURB_SHIFT;
     j = (5*j) + 1 + perturb;
@@ -199,12 +308,24 @@ point (very rarely reached) the recurrence is on (just) 5*j+1 again, and
 that's certain to find an empty slot eventually (since it generates every int
 in range(2**i), and we make sure there's always at least one empty slot).
 
+现在探测序列（最终）取决于散列码中的每一位，而在5*j+1上重复出现的伪置乱特性更有价值，
+因为它会快速放大不影响初始索引的位之间的微小差异。请注意，由于扰动是无符号的，
+因此如果经常执行递归，扰动最终将变为并保持为0。在这一点上（很少达到），
+重复出现（仅）5*j+1，最终肯定会找到一个空槽（因为它生成范围（2**i）中的每个int，
+并且我们确保始终至少有一个空槽）。
+
 Selecting a good value for PERTURB_SHIFT is a balancing act.  You want it
 small so that the high bits of the hash code continue to affect the probe
 sequence across iterations; but you want it large so that in really bad cases
 the high-order hash bits have an effect on early iterations.  5 was "the
 best" in minimizing total collisions across experiments Tim Peters ran (on
 both normal and pathological cases), but 4 and 6 weren't significantly worse.
+
+为扰动移位选择一个好的值是一种平衡行为。您希望它小一些，
+以便哈希代码的高位在迭代中继续影响探测序列；但是您希望它很大，
+以便在非常糟糕的情况下，高阶散列位会对早期迭代产生影响。
+蒂姆·彼得斯（Tim Peters）所做的实验中，5是最大限度减少总碰撞的
+“最佳”实验（在正常和病理情况下），但4和6并不明显更糟。
 
 Historical: Reimer Behrends contributed the idea of using a polynomial-based
 approach, using repeated multiplication by x in GF(2**n) where an irreducible
@@ -220,9 +341,21 @@ masked); and the PyDictObject struct required a member to hold the table's
 polynomial.  In Tim's experiments the current scheme ran faster, produced
 equally good collision statistics, needed less code & used less memory.
 
+历史：Reimer Behrends提出了使用基于多项式的方法的想法，
+在GF（2**n）中使用x的重复乘法，其中为每个表大小选择一个不可约多项式，
+从而x是原始根。Christian Tismer后来将其扩展为使用x除法，
+以此作为一种有效的方法来发挥哈希代码的高位作用。该方案还提供了出色的碰撞统计数据，
+但成本更高：循环内需要两个if测试；计算“下一个”索引所需的操作数大致相同，
+但没有太多的潜在并行性（例如，计算5*j可以与计算1+扰动同时进行，
+然后在屏蔽表索引的同时进行移位扰动）；PyDictObject结构需要一个成员来保存表的多项式。
+在Tim的实验中，当前的方案运行得更快，产生了同样好的碰撞统计数据，需要更少的代码和更少的内存。
+
 */
 
-/* forward declarations */
+/* 
+forward declarations 
+前置声明
+*/
 static Py_ssize_t lookdict(PyDictObject *mp, PyObject *key,
                            Py_hash_t hash, PyObject **value_addr);
 static Py_ssize_t lookdict_unicode(PyDictObject *mp, PyObject *key,
@@ -239,12 +372,18 @@ static PyObject* dict_iter(PyDictObject *dict);
 
 /*Global counter used to set ma_version_tag field of dictionary.
  * It is incremented each time that a dictionary is created and each
- * time that a dictionary is modified. */
+ * time that a dictionary is modified. 
+用于设置字典的ma_version_tag字段的全局计数器。
+它在每次创建字典和每次修改字典时递增。 
+ */
 static uint64_t pydict_global_version = 0;
 
 #define DICT_NEXT_VERSION() (++pydict_global_version)
 
-/* Dictionary reuse scheme to save calls to malloc and free */
+/* 
+Dictionary reuse scheme to save calls to malloc and free 
+字典重用方案--缓冲池，用于保存对malloc和free的调用
+*/
 #ifndef PyDict_MAXFREELIST
 #define PyDict_MAXFREELIST 80
 #endif
@@ -271,7 +410,10 @@ PyDict_ClearFreeList(void)
     return ret;
 }
 
-/* Print summary info about the state of the optimized allocator */
+/* 
+Print summary info about the state of the optimized allocator 
+打印有关优化分配器状态的摘要信息
+*/
 void
 _PyDict_DebugMallocStats(FILE *out)
 {
@@ -339,7 +481,10 @@ dk_get_index(PyDictKeysObject *keys, Py_ssize_t i)
     return ix;
 }
 
-/* write to indices. */
+/* 
+write to indices. 
+写入索引
+*/
 static inline void
 dk_set_index(PyDictKeysObject *keys, Py_ssize_t i, Py_ssize_t ix)
 {
@@ -376,17 +521,34 @@ dk_set_index(PyDictKeysObject *keys, Py_ssize_t i, Py_ssize_t ix)
  * collisions.  Decreasing it improves sparseness at the expense of spreading
  * indices over more cache lines and at the cost of total memory consumed.
  *
+
+ 可用分数是最大字典负载。
+ 增加此比率会使字典更密集，从而导致更多
+ 冲突。减少它可以提高稀疏性，但代价是将
+ 索引分散到更多缓存线上，并以消耗的总内存为代价。
+
  * USABLE_FRACTION must obey the following:
+
+ USABLE_FRACTION必须符合以下要求：
  *     (0 < USABLE_FRACTION(n) < n) for all n >= 2
  *
  * USABLE_FRACTION should be quick to calculate.
+ 
+ USABLE_FRACTION应该计算得很快
  * Fractions around 1/2 to 2/3 seem to work well in practice.
+
+ 1/2到2/3左右的分数在实践中似乎效果很好。
  */
 #define USABLE_FRACTION(n) (((n) << 1)/3)
 
 /* ESTIMATE_SIZE is reverse function of USABLE_FRACTION.
  * This can be used to reserve enough size to insert n entries without
  * resizing.
+ 
+ ESTIMATE_SIZE是USABLE_FRACTION的反函数。
+ 这可用于保留足够的大小，以便在不调整
+ 大小的情况下插入n个条目。
+ 
  */
 #define ESTIMATE_SIZE(n)  (((n)*3+1) >> 1)
 
@@ -403,6 +565,13 @@ dk_set_index(PyDictKeysObject *keys, Py_ssize_t i, Py_ssize_t ix)
  * but have more head room when the number of deletions is on a par with the
  * number of insertions.  See also bpo-17563 and bpo-33205.
  *
+
+ 增长率。达到最大负载时的增长率。
+ 当前设置为已使用*3。
+ 这意味着在不删除的情况下，DITCS的大小是双倍的，
+ 但是当删除的数量与插入的数目相同时，DITCS的大小
+ 就要大一些。另见bpo-17563和bpo-33205。
+
  * GROWTH_RATE was set to used*4 up to version 3.2.
  * GROWTH_RATE was set to used*2 in version 3.3.0
  * GROWTH_RATE was set to used*2 + capacity/2 in 3.4.0-3.6.0.
@@ -416,6 +585,10 @@ dk_set_index(PyDictKeysObject *keys, Py_ssize_t i, Py_ssize_t ix)
 
 /* This immutable, empty PyDictKeysObject is used for PyDict_Clear()
  * (which cannot fail and thus can do no allocation).
+
+ 这个不可变的空PyDictKeyObject用于PyDict_Clear（）
+ （它不能失败，因此不能进行分配）。
+
  */
 static PyDictKeysObject empty_keys_struct = {
         1, /* dk_refcnt */
@@ -431,7 +604,10 @@ static PyObject *empty_values[1] = { NULL };
 
 #define Py_EMPTY_KEYS &empty_keys_struct
 
-/* Uncomment to check the dict content in _PyDict_CheckConsistency() */
+/* 
+Uncomment to check the dict content in _PyDict_CheckConsistency() 
+取消注释以检查_PyDict_CheckConsistency（）中的dict内容
+*/
 /* #define DEBUG_PYDICT */
 
 
@@ -568,7 +744,10 @@ free_keys_object(PyDictKeysObject *keys)
 #define new_values(size) PyMem_NEW(PyObject *, size)
 #define free_values(values) PyMem_FREE(values)
 
-/* Consumes a reference to the keys object */
+/* 
+Consumes a reference to the keys object 
+使用对keys对象的引用
+*/
 static PyObject *
 new_dict(PyDictKeysObject *keys, PyObject **values)
 {
@@ -596,7 +775,10 @@ new_dict(PyDictKeysObject *keys, PyObject **values)
     return (PyObject *)mp;
 }
 
-/* Consumes a reference to the keys object */
+/* 
+Consumes a reference to the keys object 
+使用对keys对象的引用
+*/
 static PyObject *
 new_dict_with_shared_keys(PyDictKeysObject *keys)
 {
@@ -634,7 +816,11 @@ clone_combined_dict(PyDictObject *orig)
 
     /* After copying key/value pairs, we need to incref all
        keys and values and they are about to be co-owned by a
-       new dict object. */
+       new dict object. 
+	   复制键/值对后，我们需要增加所有
+       键和值，它们将由新的dict对象共同拥有。
+
+	   */
     PyDictKeyEntry *ep0 = DK_ENTRIES(keys);
     Py_ssize_t n = keys->dk_nentries;
     for (Py_ssize_t i = 0; i < n; i++) {
@@ -649,20 +835,29 @@ clone_combined_dict(PyDictObject *orig)
     PyDictObject *new = (PyDictObject *)new_dict(keys, NULL);
     if (new == NULL) {
         /* In case of an error, `new_dict()` takes care of
-           cleaning up `keys`. */
+           cleaning up `keys`. 
+		   
+		   如果发生错误，`new_dict（）`负责处理
+		   清理“key”。
+		   */
         return NULL;
     }
     new->ma_used = orig->ma_used;
     assert(_PyDict_CheckConsistency(new));
     if (_PyObject_GC_IS_TRACKED(orig)) {
-        /* Maintain tracking. */
+        /* Maintain tracking. 保持跟踪 */
         _PyObject_GC_TRACK(new);
     }
 
     /* Since we copied the keys table we now have an extra reference
        in the system.  Manually call _Py_INC_REFTOTAL to signal that
        we have it now; calling DK_INCREF would be an error as
-       keys->dk_refcnt is already set to 1 (after memcpy). */
+       keys->dk_refcnt is already set to 1 (after memcpy). 
+	   因为我们复制了keys表，所以现在系统中有一个额外的引用。
+       手动调用_Py_INC_REFTOTAL以表示我们现在拥有它；
+       调用DK_INCREF将是一个错误，因为keys->DK_refcnt已设置为1（在memcpy之后）。
+	
+	   */
     _Py_INC_REFTOTAL;
 
     return (PyObject *)new;
@@ -677,7 +872,10 @@ PyDict_New(void)
     return new_dict(keys, NULL);
 }
 
-/* Search index of hash table from offset of entry table */
+/* 
+Search index of hash table from offset of entry table 
+从条目表的偏移量搜索哈希表的索引
+*/
 static Py_ssize_t
 lookdict_index(PyDictKeysObject *k, Py_hash_t hash, Py_ssize_t index)
 {
@@ -705,14 +903,27 @@ This is based on Algorithm D from Knuth Vol. 3, Sec. 6.4.
 Open addressing is preferred over chaining since the link overhead for
 chaining would be substantial (100% with typical malloc overhead).
 
+所有操作使用的基本查找函数。
+这是基于Knuth第3卷第2节中的算法D。6.4.
+开放寻址优于链接，因为链接的链接开销将是巨大的（100%的典型malloc开销）。
+
+
 The initial probe index is computed as hash mod the table size. Subsequent
 probe indices are computed as explained earlier.
 
+初始探测索引计算为哈希mod表大小。如前所述，计算后续探头指数。
+
 All arithmetic on hash should ignore overflow.
+
+哈希上的所有算法都应忽略溢出。
 
 The details in this version are due to Tim Peters, building on many past
 contributions by Reimer Behrends, Jyrki Alakuijala, Vladimir Marangozov and
 Christian Tismer.
+
+本版本中的细节应归功于蒂姆·彼得斯（Tim Peters），他在莱默·贝伦兹（Reimer Behrends）、
+伊尔基·阿拉奎贾拉（Jyrki Alakuijala）、弗拉基米尔·马兰戈佐夫（Vladimir Marangozov）
+和克里斯蒂安·蒂斯默（Christian Tismer）过去的许多贡献的基础。
 
 lookdict() is general-purpose, and may return DKIX_ERROR if (and only if) a
 comparison raises an exception.
@@ -722,6 +933,13 @@ is string.  Otherwise, it falls back to lookdict().
 lookdict_unicode_nodummy is further specialized for string keys that cannot be
 the <dummy> value.
 For both, when the key isn't found a DKIX_EMPTY is returned.
+
+lookdict（）是通用的，如果（且仅当）比较引发异常，则可能返回DKIX_ERROR。
+下面的lookdict_unicode（）专门用于字符串键，对其进行比较永远不会引发异常；
+当key为string时，该函数永远不能返回DKIX_错误。否则，它将返回lookdict（）。
+lookdict_unicode_nodummy进一步专门用于不能为<dummy>值的字符串键。
+对于这两种情况，当找不到密钥时，将返回一个DKIX_EMPTY。
+
 */
 static Py_ssize_t _Py_HOT_FUNCTION
 lookdict(PyDictObject *mp, PyObject *key,
@@ -767,7 +985,10 @@ top:
                     }
                 }
                 else {
-                    /* The dict was mutated, restart */
+                    /* 
+					The dict was mutated, restart 
+					字典发生了变异，重新启动
+					*/
                     goto top;
                 }
             }
@@ -778,7 +999,10 @@ top:
     Py_UNREACHABLE();
 }
 
-/* Specialized version for string-only keys */
+/* 
+Specialized version for string-only keys 
+仅字符串键的专用版本
+*/
 static Py_ssize_t _Py_HOT_FUNCTION
 lookdict_unicode(PyDictObject *mp, PyObject *key,
                  Py_hash_t hash, PyObject **value_addr)
@@ -787,7 +1011,12 @@ lookdict_unicode(PyDictObject *mp, PyObject *key,
     /* Make sure this function doesn't have to handle non-unicode keys,
        including subclasses of str; e.g., one reason to subclass
        unicodes is to override __eq__, and for speed we don't cater to
-       that here. */
+       that here. 
+
+	   确保此函数不必处理非unicode键，包括str的子类；
+       例如，将unicodes子类化的一个原因是覆盖_eq_，
+       而对于速度，我们在这里不满足这一点。
+	   */
     if (!PyUnicode_CheckExact(key)) {
         mp->ma_keys->dk_lookup = lookdict;
         return lookdict(mp, key, hash, value_addr);
@@ -821,7 +1050,11 @@ lookdict_unicode(PyDictObject *mp, PyObject *key,
 }
 
 /* Faster version of lookdict_unicode when it is known that no <dummy> keys
- * will be present. */
+ * will be present. 
+ 当已知不存在<dummy>键
+ 时，lookdict_unicode的更快版本
+ 
+ */
 static Py_ssize_t _Py_HOT_FUNCTION
 lookdict_unicode_nodummy(PyDictObject *mp, PyObject *key,
                          Py_hash_t hash, PyObject **value_addr)
@@ -830,7 +1063,13 @@ lookdict_unicode_nodummy(PyDictObject *mp, PyObject *key,
     /* Make sure this function doesn't have to handle non-unicode keys,
        including subclasses of str; e.g., one reason to subclass
        unicodes is to override __eq__, and for speed we don't cater to
-       that here. */
+       that here. 
+	   
+	   确保此函数不必处理非unicode键，包括str的子类；
+	   例如，将unicodes子类化的一个原因是覆盖_eq_，
+	   而对于速度，我们在这里不满足这一点。
+
+	   */
     if (!PyUnicode_CheckExact(key)) {
         mp->ma_keys->dk_lookup = lookdict;
         return lookdict(mp, key, hash, value_addr);
@@ -866,12 +1105,21 @@ lookdict_unicode_nodummy(PyDictObject *mp, PyObject *key,
  * All split tables and only split tables use this lookup function.
  * Split tables only contain unicode keys and no dummy keys,
  * so algorithm is the same as lookdict_unicode_nodummy.
+
+ 拆分表的lookdict版本。
+ 所有拆分表和仅拆分表都使用此查找功能。
+ 拆分表只包含unicode键，不包含伪键，
+ 因此算法与lookdict_unicode_nodummy相同。
+
  */
 static Py_ssize_t _Py_HOT_FUNCTION
 lookdict_split(PyDictObject *mp, PyObject *key,
                Py_hash_t hash, PyObject **value_addr)
 {
-    /* mp must split table */
+    /* 
+	mp must split table 
+	mp必须拆分表
+	*/
     assert(mp->ma_values != NULL);
     if (!PyUnicode_CheckExact(key)) {
         Py_ssize_t ix = lookdict(mp, key, hash, value_addr);
@@ -970,8 +1218,11 @@ _PyDict_MaybeUntrack(PyObject *op)
 
 /* Internal function to find slot for an item from its hash
    when it is known that the key is not present in the dict.
+   内部函数，用于在已知dict中不存在密钥时，从散列中查找项的插槽。
 
-   The dict must be combined. */
+   The dict must be combined. 
+   
+   */
 static Py_ssize_t
 find_empty_slot(PyDictKeysObject *keys, Py_hash_t hash)
 {
@@ -998,6 +1249,11 @@ insertion_resize(PyDictObject *mp)
 Internal routine to insert a new item into the table.
 Used both by the internal resize routine and by the public insert routine.
 Returns -1 if an error occurred, or 0 on success.
+
+将新项目插入表的内部例程。
+由内部调整大小例程和公共插入例程使用。
+如果发生错误，则返回-1；如果成功，则返回0。
+
 */
 static int
 insertdict(PyDictObject *mp, PyObject *key, Py_hash_t hash, PyObject *value)
@@ -1021,6 +1277,10 @@ insertdict(PyDictObject *mp, PyObject *key, Py_hash_t hash, PyObject *value)
 
     /* When insertion order is different from shared key, we can't share
      * the key anymore.  Convert this instance to combine table.
+
+	 当插入顺序与共享密钥不同时，我们无法再共享
+	 密钥。将此实例转换为组合表。
+
      */
     if (_PyDict_HasSplitTable(mp) &&
         ((ix >= 0 && old_value == NULL && mp->ma_used != ix) ||
@@ -1031,10 +1291,13 @@ insertdict(PyDictObject *mp, PyObject *key, Py_hash_t hash, PyObject *value)
     }
 
     if (ix == DKIX_EMPTY) {
-        /* Insert into new slot. */
+        /* 
+		Insert into new slot. 
+		插入新插槽。
+		*/
         assert(old_value == NULL);
         if (mp->ma_keys->dk_usable <= 0) {
-            /* Need to resize. */
+            /* Need to resize. 需要调整大小 */
             if (insertion_resize(mp) < 0)
                 goto Fail;
         }
@@ -1086,6 +1349,7 @@ Fail:
 
 /*
 Internal routine used by dictresize() to build a hashtable of entries.
+dictresize（）用于构建条目哈希表的内部例程。
 */
 static void
 build_indices(PyDictKeysObject *keys, PyDictKeyEntry *ep, Py_ssize_t n)
@@ -1111,6 +1375,12 @@ then the values are temporarily copied into the table, it is resized as
 a combined table, then the me_value slots in the old table are NULLed out.
 After resizing a table is always combined,
 but can be resplit by make_keys_shared().
+
+通过分配新表并重新插入所有项来重新构造表。删除条目后，新表实际上可能比旧表小。
+如果拆分一个表（共享其键和散列，不共享其值），则会将值临时复制到该表中，
+并将其调整为组合表的大小，然后将旧表中的me_值槽清空。调整大小后，表始终合并，
+但可以通过make_keys_shared（）重新拆分。
+
 */
 static int
 dictresize(PyDictObject *mp, Py_ssize_t minsize)
@@ -1120,7 +1390,10 @@ dictresize(PyDictObject *mp, Py_ssize_t minsize)
     PyObject **oldvalues;
     PyDictKeyEntry *oldentries, *newentries;
 
-    /* Find the smallest table size > minused. */
+    /* 
+	Find the smallest table size > minused. 
+	查找最小的表size > minused。
+	*/
     for (newsize = PyDict_MINSIZE;
          newsize < minsize && newsize > 0;
          newsize <<= 1)
@@ -1135,6 +1408,11 @@ dictresize(PyDictObject *mp, Py_ssize_t minsize)
     /* NOTE: Current odict checks mp->ma_keys to detect resize happen.
      * So we can't reuse oldkeys even if oldkeys->dk_size == newsize.
      * TODO: Try reusing oldkeys when reimplement odict.
+
+	 注意：当前odict检查mp->ma_键以检测是否发生调整大小。
+	 因此，即使oldkeys->dk_size==newsize，我们也不能重用oldkeys。
+	 TODO:重新实现odict时尝试重用旧密钥。
+
      */
 
     /* Allocate a new table. */
@@ -1156,6 +1434,11 @@ dictresize(PyDictObject *mp, Py_ssize_t minsize)
         /* Convert split table into new combined table.
          * We must incref keys; we can transfer values.
          * Note that values of split table is always dense.
+
+		 将拆分表转换为新的组合表。
+		 我们必须增加钥匙；我们可以传递价值观。
+		 请注意，拆分表的值总是密集的。
+
          */
         for (Py_ssize_t i = 0; i < numentries; i++) {
             assert(oldvalues[i] != NULL);
@@ -1204,7 +1487,11 @@ dictresize(PyDictObject *mp, Py_ssize_t minsize)
 }
 
 /* Returns NULL if unable to split table.
- * A NULL return does not necessarily indicate an error */
+ * A NULL return does not necessarily indicate an error 
+ 
+如果无法拆分表，则返回NULL。
+NULL返回不一定表示错误
+ */
 static PyDictKeysObject *
 make_keys_shared(PyObject *op)
 {
@@ -1222,12 +1509,12 @@ make_keys_shared(PyObject *op)
             return NULL;
         }
         else if (mp->ma_keys->dk_lookup == lookdict_unicode) {
-            /* Remove dummy keys */
+            /* Remove dummy keys 删除虚拟关键点 */
             if (dictresize(mp, DK_SIZE(mp->ma_keys)))
                 return NULL;
         }
         assert(mp->ma_keys->dk_lookup == lookdict_unicode_nodummy);
-        /* Copy values into a new array */
+        /* Copy values into a new array 将值复制到新数组中 */
         ep0 = DK_ENTRIES(mp->ma_keys);
         size = USABLE_FRACTION(DK_SIZE(mp->ma_keys));
         values = new_values(size);
@@ -1257,6 +1544,11 @@ _PyDict_NewPresized(Py_ssize_t minused)
     /* There are no strict guarantee that returned dict can contain minused
      * items without resize.  So we create medium size dict instead of very
      * large dict or MemoryError.
+
+	 没有严格保证返回的dict可以包含减少的
+	 项而不调整大小。所以我们创建了中等大小的dict，
+	 而不是非常大的dict或MemoryError。
+
      */
     if (minused > USABLE_FRACTION(max_presize)) {
         newsize = max_presize;
@@ -1285,6 +1577,15 @@ _PyDict_NewPresized(Py_ssize_t minused)
  * sequence.  A nasty example of the latter is when a Python-coded comparison
  * function hits a stack-depth error, which can cause this to return NULL
  * even if the key is present.
+
+ 请注意，出于历史原因，PyDict_GetItem（）会抑制所有可能发生的错误
+ （最初dicts只支持字符串键，而异常*是不可能的）。因此，虽然最初的意图是NULL返回
+ 意味着密钥不存在，但实际上它可能意味着，或者在计算密钥的散列时发生错误
+ （抑制），或者在比较dict的内部探测
+ 序列中的密钥时发生错误*（抑制）。后者的一个令人讨厌的例子是，Python编码的comparison
+ 函数遇到堆栈深度错误，这可能导致返回NULL
+ 即使键存在。
+
  */
 PyObject *
 PyDict_GetItem(PyObject *op, PyObject *key)
@@ -1311,10 +1612,20 @@ PyDict_GetItem(PyObject *op, PyObject *key)
        running "python -Wi" for an example related to string interning.
        Let's just hope that no exception occurs then...  This must be
        _PyThreadState_Current and not PyThreadState_GET() because in debug
-       mode, the latter complains if tstate is NULL. */
+       mode, the latter complains if tstate is NULL. 
+	   
+	   我们可以在初始化过程中使用NULL tstate到达这里：尝试
+       运行“python-Wi”以获取与字符串内部处理相关的示例。
+       让我们只希望没有例外发生然后。。。这必须是
+       _PyThreadState_Current，而不是PyThreadState_GET（），因为在调试
+       模式下，如果tstate为NULL，后者会发出抱怨。
+	*/
     tstate = PyThreadState_GET();
     if (tstate != NULL && tstate->curexc_type != NULL) {
-        /* preserve the existing exception */
+        /* 
+		preserve the existing exception 
+		保留现有的异常
+		*/
         PyObject *err_type, *err_value, *err_tb;
         PyErr_Fetch(&err_type, &err_value, &err_tb);
         ix = (mp->ma_keys->dk_lookup)(mp, key, hash, &value);
@@ -1336,7 +1647,12 @@ PyDict_GetItem(PyObject *op, PyObject *key)
 /* Same as PyDict_GetItemWithError() but with hash supplied by caller.
    This returns NULL *with* an exception set if an exception occurred.
    It returns NULL *without* an exception set if the key wasn't present.
-*/
+
+   与PyDict_GetItemWithError（）相同，但使用调用者提供的哈希。
+   如果发生异常，则返回空*并设置*异常。
+   如果密钥不存在，则返回NULL*而不返回*异常集。
+   
+   */
 PyObject *
 _PyDict_GetItem_KnownHash(PyObject *op, PyObject *key, Py_hash_t hash)
 {
@@ -1359,7 +1675,12 @@ _PyDict_GetItem_KnownHash(PyObject *op, PyObject *key, Py_hash_t hash)
 /* Variant of PyDict_GetItem() that doesn't suppress exceptions.
    This returns NULL *with* an exception set if an exception occurred.
    It returns NULL *without* an exception set if the key wasn't present.
-*/
+
+   PyDict_GetItem（）的变体，不抑制异常。
+   如果发生异常，则返回空*并设置*异常。
+   如果密钥不存在，则返回NULL*而不返回*异常集。
+   
+   */
 PyObject *
 PyDict_GetItemWithError(PyObject *op, PyObject *key)
 {
@@ -1399,10 +1720,19 @@ _PyDict_GetItemIdWithError(PyObject *dp, struct _Py_Identifier *key)
 
 /* Fast version of global value lookup (LOAD_GLOBAL).
  * Lookup in globals, then builtins.
+
+ 全局值查找的快速版本（加载\全局）。
+ 在全局中查找，然后在内置中查找。
+
  *
  * Raise an exception and return NULL if an error occurred (ex: computing the
  * key hash failed, key comparison failed, ...). Return NULL if the key doesn't
  * exist. Return the value if the key exists.
+
+ 如果发生错误，则引发异常并返回NULL（例如：计算
+ 密钥哈希失败，密钥比较失败，…）。如果密钥
+ 不存在，则返回NULL。如果键存在，则返回该值。
+
  */
 PyObject *
 _PyDict_LoadGlobal(PyDictObject *globals, PyDictObject *builtins, PyObject *key)
@@ -1438,6 +1768,13 @@ _PyDict_LoadGlobal(PyDictObject *globals, PyDictObject *builtins, PyObject *key)
  * This means that it's safe to loop over a dictionary with PyDict_Next()
  * and occasionally replace a value -- but you can't insert new keys or
  * remove them.
+
+ 警告：PyDict_SetItem（）必须保证，
+ 如果它只是替换现有键的值，它不会调整字典的大小。
+ 这意味着使用PyDict_Next（）
+ 在字典上循环并偶尔替换一个值是安全的，但不能插入新键或
+ 删除它们。
+
  */
 int
 PyDict_SetItem(PyObject *op, PyObject *key, PyObject *value)
@@ -1559,6 +1896,10 @@ _PyDict_DelItem_KnownHash(PyObject *op, PyObject *key, Py_hash_t hash)
 /* This function promises that the predicate -> deletion sequence is atomic
  * (i.e. protected by the GIL), assuming the predicate itself doesn't
  * release the GIL.
+
+ 该函数承诺谓词->删除序列是原子的
+ （即受GIL保护），假设谓词本身不释放GIL。
+
  */
 int
 _PyDict_DelItemIf(PyObject *op, PyObject *key,
@@ -1650,6 +1991,10 @@ PyDict_Clear(PyObject *op)
  * to the key and value.
  * Return 1 on success, return 0 when the reached the end of the dictionary
  * (or if op is not a dictionary)
+
+ PyDict_Next的内部版本，除了键和值之外，还返回一个哈希值。
+ 成功返回1，到达字典结尾时返回0（或者如果op不是字典）
+
  */
 int
 _PyDict_Next(PyObject *op, Py_ssize_t *ppos, PyObject **pkey,
@@ -1697,6 +2042,8 @@ _PyDict_Next(PyObject *op, Py_ssize_t *ppos, PyObject **pkey,
 
 /*
  * Iterate over a dict.  Use like so:
+
+ 重复一个命令。像这样使用：
  *
  *     Py_ssize_t i;
  *     PyObject *key, *value;
@@ -1708,10 +2055,18 @@ _PyDict_Next(PyObject *op, Py_ssize_t *ppos, PyObject **pkey,
  * Return 1 on success, return 0 when the reached the end of the dictionary
  * (or if op is not a dictionary)
  *
+
+ 成功时返回1，到达字典末尾时返回0（或者如果op不是字典）
+
  * CAUTION:  In general, it isn't safe to use PyDict_Next in a loop that
  * mutates the dict.  One exception:  it is safe if the loop merely changes
  * the values associated with the keys (but doesn't insert new keys or
  * delete keys), via PyDict_SetItem().
+
+ 警告：一般来说，在变异dict的循环中使用PyDict_Next是不安全的。
+ 一个例外：如果循环仅通过PyDict_SetItem（）更改与键关联的值
+ （但不插入新键或删除键），则是安全的。
+
  */
 int
 PyDict_Next(PyObject *op, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue)
@@ -1719,7 +2074,10 @@ PyDict_Next(PyObject *op, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue)
     return _PyDict_Next(op, ppos, pkey, pvalue, NULL);
 }
 
-/* Internal version of dict.pop(). */
+/* 
+Internal version of dict.pop(). 
+dict.pop（）的内部版本
+*/
 PyObject *
 _PyDict_Pop_KnownHash(PyObject *dict, PyObject *key, Py_hash_t hash, PyObject *deflt)
 {
@@ -1799,7 +2157,10 @@ _PyDict_Pop(PyObject *dict, PyObject *key, PyObject *deflt)
     return _PyDict_Pop_KnownHash(dict, key, hash, deflt);
 }
 
-/* Internal version of dict.from_keys().  It is subclass-friendly. */
+/* 
+Internal version of dict.from_keys().  It is subclass-friendly.
+来自_keys（）的指令的内部版本。它是子类友好的。
+*/
 PyObject *
 _PyDict_FromKeys(PyObject *cls, PyObject *iterable, PyObject *value)
 {
@@ -1896,7 +2257,10 @@ dict_dealloc(PyDictObject *mp)
     PyDictKeysObject *keys = mp->ma_keys;
     Py_ssize_t i, n;
 
-    /* bpo-31095: UnTrack is needed before calling any callbacks */
+    /* 
+	bpo-31095: UnTrack is needed before calling any callbacks 
+	bpo-31095:在调用任何回调之前需要取消跟踪
+	*/
     PyObject_GC_UnTrack(mp);
     Py_TRASHCAN_SAFE_BEGIN(mp)
     if (values != NULL) {
@@ -1947,14 +2311,21 @@ dict_repr(PyDictObject *mp)
         goto error;
 
     /* Do repr() on each key+value pair, and insert ": " between them.
-       Note that repr may mutate the dict. */
+       Note that repr may mutate the dict.
+	   对每个键+值对执行repr（），并在它们之间插入“：”。
+       请注意，repr可能会使dict发生变异。
+	   
+	   */
     i = 0;
     first = 1;
     while (PyDict_Next((PyObject *)mp, &i, &key, &value)) {
         PyObject *s;
         int res;
 
-        /* Prevent repr from deleting key or value during key format. */
+        /* 
+		Prevent repr from deleting key or value during key format. 
+		防止repr在密钥格式期间删除密钥或值。
+		*/
         Py_INCREF(key);
         Py_INCREF(value);
 
@@ -2027,7 +2398,10 @@ dict_subscript(PyDictObject *mp, PyObject *key)
         return NULL;
     if (ix == DKIX_EMPTY || value == NULL) {
         if (!PyDict_CheckExact(mp)) {
-            /* Look up __missing__ method if we're a subclass. */
+            /* 
+			Look up __missing__ method if we're a subclass. 
+			如果我们是一个子类，请查找__missing__方法。
+			*/
             PyObject *missing, *res;
             _Py_IDENTIFIER(__missing__);
             missing = _PyObject_LookupSpecial((PyObject *)mp, &PyId___missing__);
@@ -2079,6 +2453,10 @@ dict_keys(PyDictObject *mp)
     if (n != mp->ma_used) {
         /* Durnit.  The allocations caused the dict to resize.
          * Just start over, this shouldn't normally happen.
+
+		 杜尔尼特。分配导致dict调整大小。
+		 重新开始，这通常不会发生。
+
          */
         Py_DECREF(v);
         goto again;
@@ -2163,6 +2541,10 @@ dict_items(PyDictObject *mp)
     /* Preallocate the list of tuples, to avoid allocations during
      * the loop over the items, which could trigger GC, which
      * could resize the dict. :-(
+
+	 预先分配元组列表，以避免在项循环期间分配，
+	 这可能触发GC，从而调整dict的大小
+
      */
   again:
     n = mp->ma_used;
@@ -2184,7 +2566,10 @@ dict_items(PyDictObject *mp)
         Py_DECREF(v);
         goto again;
     }
-    /* Nothing we do below makes any function calls. */
+    /* 
+	Nothing we do below makes any function calls. 
+	下面我们所做的任何操作都不会进行任何函数调用。
+	*/
     ep = DK_ENTRIES(mp->ma_keys);
     size = mp->ma_keys->dk_nentries;
     if (mp->ma_values) {
@@ -2220,6 +2605,7 @@ dict.fromkeys
     /
 
 Create a new dictionary with keys from iterable and values set to value.
+使用iterable中的键和设置为value的值创建一个新字典。
 [clinic start generated code]*/
 
 static PyObject *
@@ -2265,7 +2651,13 @@ dict_update_common(PyObject *self, PyObject *args, PyObject *kwds,
 
 /* Note: dict.update() uses the METH_VARARGS|METH_KEYWORDS calling convention.
    Using METH_FASTCALL|METH_KEYWORDS would make dict.update(**dict2) calls
-   slower, see the issue #29312. */
+   slower, see the issue #29312. 
+   
+   注意：dict.update（）使用METH_VARARGS | METH_关键字调用约定。
+   使用METH_FASTCALL | METH_关键字会使dict.update（**dict2）调用
+   变慢，请参阅问题29312。
+ 
+ */
 static PyObject *
 dict_update(PyObject *self, PyObject *args, PyObject *kwds)
 {
@@ -2278,10 +2670,20 @@ dict_update(PyObject *self, PyObject *args, PyObject *kwds)
    Merge has a 3rd argument 'override'; if set, it acts like Update,
    otherwise it leaves existing items unchanged.
 
+   更新无条件替换现有项。
+   Merge有第三个参数“override”；如果设置了，则其行为类似于更新，
+   否则将保持现有项不变。
+
    PyDict_{Update,Merge} update/merge from a mapping object.
+
+   PyDict{Update，Merge}从映射对象更新/合并
 
    PyDict_MergeFromSeq2 updates/merges from any iterable object
    producing iterable objects of length 2.
+
+   PyDict_MergeFromSeq2更新/合并任何可编辑对象，
+   生成长度为2的可编辑对象。
+
 */
 
 int
@@ -2375,6 +2777,12 @@ dict_merge(PyObject *a, PyObject *b, int override)
      * or an abstract "mapping" object.  For the former, we can do
      * things quite efficiently.  For the latter, we only require that
      * PyMapping_Keys() and PyObject_GetItem() be supported.
+
+	 我们接受一个具体的dictionary对象，
+	 或一个抽象的“mapping”对象作为参数。对于前者，我们可以
+	 非常有效地做事情。对于后者，我们只要求支持
+	 PyMapping_Keys（）和PyObject_GetItem（）。
+
      */
     if (a == NULL || !PyDict_Check(a) || b == NULL) {
         PyErr_BadInternalCall();
@@ -2390,11 +2798,20 @@ dict_merge(PyObject *a, PyObject *b, int override)
             /* Since the target dict is empty, PyDict_GetItem()
              * always returns NULL.  Setting override to 1
              * skips the unnecessary test.
+
+			 由于目标dict为空，因此PyDict_GetItem（）
+			 始终返回NULL。将覆盖设置为1
+			 跳过不必要的测试。
              */
             override = 1;
         /* Do one big resize at the start, rather than
          * incrementally resizing as we insert new items.  Expect
          * that there will be no (or few) overlapping keys.
+
+		 在开始时做一个大的调整，而不是
+		 在插入新项目时增量调整大小。期望
+		 没有（或很少）重叠键。
+
          */
         if (USABLE_FRACTION(mp->ma_keys->dk_size) < other->ma_used) {
             if (dictresize(mp, ESTIMATE_SIZE(mp->ma_used + other->ma_used))) {
@@ -2447,7 +2864,10 @@ dict_merge(PyObject *a, PyObject *b, int override)
         }
     }
     else {
-        /* Do it the generic, slower way */
+        /* 
+		Do it the generic, slower way 
+		用一般的、慢一点的方法来做
+		*/
         PyObject *keys = PyMapping_Keys(b);
         PyObject *iter;
         PyObject *key, *value;
@@ -2458,6 +2878,10 @@ dict_merge(PyObject *a, PyObject *b, int override)
              * if E doesn't have a .keys() method we want
              * AttributeError to percolate up.  Might as well
              * do the same for any other error.
+
+			 Docstring说这相当于E.keys（），所以如果E没有.keys（）方法，
+			 我们希望AttributeError渗透。对于任何其他错误，也可以这样做。
+
              */
             return -1;
 
@@ -2539,7 +2963,10 @@ PyDict_Copy(PyObject *o)
 
     mp = (PyDictObject *)o;
     if (mp->ma_used == 0) {
-        /* The dict is empty; just return a new dict. */
+        /* 
+		The dict is empty; just return a new dict. 
+		字典是空的；只需返回一个新的字典
+		*/
         return PyDict_New();
     }
 
@@ -2574,18 +3001,29 @@ PyDict_Copy(PyObject *o)
             (mp->ma_used >= (mp->ma_keys->dk_nentries * 2) / 3))
     {
         /* Use fast-copy if:
+			在以下情况下使用快速复制：
 
            (1) 'mp' is an instance of a subclassed dict; and
+		   （1） “mp”是一个子类dict的实例；并且
 
            (2) 'mp' is not a split-dict; and
+		   （2） “mp”不是一个拆分的dict；并且
 
            (3) if 'mp' is non-compact ('del' operation does not resize dicts),
                do fast-copy only if it has at most 1/3 non-used keys.
+		   （3） 如果“mp”为非紧凑型（“del”操作不会调整dicts的大小），
+               仅当它最多有1/3个未使用的密钥时才进行快速复制。
 
            The last condition (3) is important to guard against a pathological
            case when a large dict is almost emptied with multiple del/pop
            operations and copied after that.  In cases like this, we defer to
            PyDict_Merge, which produces a compacted copy.
+
+		   最后一个条件（3）对于防止病态情况非常重要，
+		   因为大型dict几乎被多次del/pop
+		   操作清空，然后被复制。在这种情况下，我们遵从
+		   PyDict_Merge，它生成一个压缩副本。
+
         */
         return clone_combined_dict(mp);
     }
@@ -2642,6 +3080,11 @@ PyDict_Items(PyObject *mp)
 /* Return 1 if dicts equal, 0 if not, -1 if error.
  * Gets out as soon as any difference is detected.
  * Uses only Py_EQ comparison.
+
+ 如果dicts相等，则返回1；如果dicts不相等，则返回0；如果dicts错误，则返回-1。
+ 一旦检测到任何差异，立即退出。
+ 仅使用Py_EQ比较。
+
  */
 static int
 dict_equal(PyDictObject *a, PyDictObject *b)
@@ -2664,7 +3107,11 @@ dict_equal(PyDictObject *a, PyDictObject *b)
             PyObject *bval;
             PyObject *key = ep->me_key;
             /* temporarily bump aval's refcount to ensure it stays
-               alive until we're done with it */
+               alive until we're done with it 
+			   暂时增加aval的refcount，以确保它
+               在我们处理完之前保持活动状态
+			   
+			   */
             Py_INCREF(aval);
             /* ditto for key */
             Py_INCREF(key);
@@ -2719,6 +3166,7 @@ dict.__contains__
   /
 
 True if the dictionary has the specified key, else False.
+如果字典具有指定的键，则为True，否则为False。
 [clinic start generated code]*/
 
 static PyObject *
@@ -2752,6 +3200,7 @@ dict.get
     /
 
 Return the value for key if key is in the dictionary, else default.
+如果键在字典中，则返回键的值，否则为默认值。
 [clinic start generated code]*/
 
 static PyObject *
@@ -2868,8 +3317,10 @@ dict.setdefault
     /
 
 Insert key with a value of default if key is not in the dictionary.
+如果关键字不在字典中，则插入默认值为的关键字。
 
 Return the value for key if key is in the dictionary, else default.
+如果键在字典中，则返回键的值，否则为默认值。
 [clinic start generated code]*/
 
 static PyObject *
@@ -2917,6 +3368,14 @@ dict_popitem(PyDictObject *mp)
      * idiom is "while d: k, v = d.popitem()". so needing to throw the
      * tuple away if the dict *is* empty isn't a significant
      * inefficiency -- possible, but unlikely in practice.
+
+	 在检查大小之前分配结果元组。信不信由你，
+	 这个分配可能会触发一个垃圾收集，它可能会清空dict，
+	 因此如果我们先检查大小，结果将是一个无限循环（搜索一个不再存在的条目）。
+	 请注意，常用的popitem（）习惯用法是“whiled:k，v=d.popitem（）”。
+	 因此，如果dict是空的，那么需要扔掉
+	 元组并不是一个显著的*低效率——可能，但在实践中不太可能。
+
      */
     res = PyTuple_New(2);
     if (res == NULL)
@@ -3014,7 +3473,9 @@ _PyDict_SizeOf(PyDictObject *mp)
     if (mp->ma_values)
         res += usable * sizeof(PyObject*);
     /* If the dictionary is split, the keys portion is accounted-for
-       in the type object. */
+       in the type object. 
+	   如果字典被拆分，则键部分将计入类型对象中。
+	   */
     if (mp->ma_keys->dk_refcnt == 1)
         res += (sizeof(PyDictKeysObject)
                 + DK_IXSIZE(mp->ma_keys) * size
@@ -3101,7 +3562,10 @@ static PyMethodDef mapp_methods[] = {
     {NULL,              NULL}   /* sentinel */
 };
 
-/* Return 1 if `key` is in dict `op`, 0 if not, and -1 on error. */
+/* 
+Return 1 if `key` is in dict `op`, 0 if not, and -1 on error. 
+如果dict'op'中有'key'，则返回1；如果没有，则返回0；如果出现错误，则返回-1。
+*/
 int
 PyDict_Contains(PyObject *op, PyObject *key)
 {
@@ -3676,7 +4140,10 @@ dictiter_reduce(dictiterobject *di)
     tmp = *di;
     Py_XINCREF(tmp.di_dict);
 
-    /* iterate the temporary into a list */
+    /* 
+	iterate the temporary into a list 
+	将临时文件迭代到列表中
+	*/
     for(;;) {
         PyObject *element = 0;
         if (Py_TYPE(di) == &PyDictIterItem_Type)
@@ -3712,7 +4179,10 @@ dictiter_reduce(dictiterobject *di)
 /* View objects for keys(), items(), values(). */
 /***********************************************/
 
-/* The instance lay-out is the same for all three; but the type differs. */
+/* 
+The instance lay-out is the same for all three; but the type differs. 
+所有三种情况下的实例布局相同；但类型不同。
+*/
 
 static void
 dictview_dealloc(_PyDictViewObject *dv)
@@ -3764,15 +4234,27 @@ _PyDictView_New(PyObject *dict, PyTypeObject *type)
 }
 
 /* TODO(guido): The views objects are not complete:
+	视图对象不完整
 
  * support more set operations
  * support arbitrary mappings?
    - either these should be static or exported in dictobject.h
    - if public then they should probably be in builtins
+
+   支持更多集合操作
+   支持任意映射？
+   -要么是静态的，要么是在dictobject.h中导出的
+   -如果是公共的，那么它们应该是内置的
+
 */
 
 /* Return 1 if self is a subset of other, iterating over self;
-   0 if not; -1 if an error occurred. */
+   0 if not; -1 if an error occurred. 
+   
+   如果self是other的子集，则返回1，迭代self；
+   如果不是，则为0-1如果发生错误。
+
+   */
 static int
 all_contained_in(PyObject *self, PyObject *other)
 {
@@ -4023,7 +4505,12 @@ dictviews_isdisjoint(PyObject *self, PyObject *other)
     }
 
     /* Iterate over the shorter object (only if other is a set,
-     * because PySequence_Contains may be expensive otherwise): */
+     * because PySequence_Contains may be expensive otherwise): 
+	 
+	 迭代较短的对象（仅当other是一个集合时，
+	 因为PySequence_包含的内容可能会很昂贵）
+	 
+	 */
     if (PyAnySet_Check(other) || PyDictViewSet_Check(other)) {
         Py_ssize_t len_self = dictview_len((_PyDictViewObject *)self);
         Py_ssize_t len_other = PyObject_Size(other);
@@ -4264,7 +4751,12 @@ dictvalues_new(PyObject *dict)
 }
 
 /* Returns NULL if cannot allocate a new PyDictKeysObject,
-   but does not set an error */
+   but does not set an error 
+   
+   如果无法分配新的PyDictKeysObject，则返回NULL，
+   但不会设置错误
+   
+   */
 PyDictKeysObject *
 _PyDict_NewKeysForClass(void)
 {
@@ -4325,6 +4817,7 @@ _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr,
             res = PyDict_DelItem(dict, key);
             // Since key sharing dict doesn't allow deletion, PyDict_DelItem()
             // always converts dict to combined form.
+			// 由于密钥共享dict不允许删除，因此PyDict_DelItem（）始终将dict转换为组合形式。
             if ((cached = CACHED_KEYS(tp)) != NULL) {
                 CACHED_KEYS(tp) = NULL;
                 DK_DECREF(cached);
@@ -4340,9 +4833,18 @@ _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr,
                  * into combined table.  In such case, convert it to split
                  * table again and update type's shared key only when this is
                  * the only dict sharing key with the type.
+
+				 PyDict_SetItem（）可以调用dictresize并将拆分表
+				 转换为组合表。在这种情况下，请再次将其转换为split
+				 表，并仅在该类型为
+				 的唯一dict共享键时更新该类型的共享键。
+
                  *
                  * This is to allow using shared key in class like this:
                  *
+
+				 这允许在类中使用共享密钥，如下所示：
+
                  *     class C:
                  *         def __init__(self):
                  *             # one dict resize happens
