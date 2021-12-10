@@ -12,6 +12,7 @@
     <None Include="..\PC\pycon.ico">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="ClassDiagram1.cd" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\PC\python_exe.rc">

@@ -1378,7 +1378,7 @@ but can be resplit by make_keys_shared().
 
 通过分配新表并重新插入所有项来重新构造表。删除条目后，新表实际上可能比旧表小。
 如果拆分一个表（共享其键和散列，不共享其值），则会将值临时复制到该表中，
-并将其调整为组合表的大小，然后将旧表中的me_值槽清空。调整大小后，表始终合并，
+并将其调整为组合表的大小，然后将旧表中的me_value槽清空。调整大小后，表始终合并，
 但可以通过make_keys_shared（）重新拆分。
 
 */
@@ -1392,7 +1392,7 @@ dictresize(PyDictObject *mp, Py_ssize_t minsize)
 
     /* 
 	Find the smallest table size > minused. 
-	查找最小的表size > minused。
+	查找最小的表 size > minused。
 	*/
     for (newsize = PyDict_MINSIZE;
          newsize < minsize && newsize > 0;
@@ -1409,7 +1409,7 @@ dictresize(PyDictObject *mp, Py_ssize_t minsize)
      * So we can't reuse oldkeys even if oldkeys->dk_size == newsize.
      * TODO: Try reusing oldkeys when reimplement odict.
 
-	 注意：当前odict检查mp->ma_键以检测是否发生调整大小。
+	 注意：当前odict检查mp->ma_keys 以检测是否发生调整大小。
 	 因此，即使oldkeys->dk_size==newsize，我们也不能重用oldkeys。
 	 TODO:重新实现odict时尝试重用旧密钥。
 

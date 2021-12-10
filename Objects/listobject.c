@@ -17,6 +17,8 @@ class list "PyListObject *" "&PyList_Type"
 
 #include "clinic/listobject.c.h"
 
+static void trace_list_new(Py_ssize_t size, PyListObject *op);
+
 /* Ensure ob_item has room for at least newsize elements, and set
  * ob_size to newsize.  If newsize > ob_size on entry, the content
  * of the new slots at exit is undefined heap trash; it's the caller's
@@ -174,9 +176,12 @@ PyList_New(Py_ssize_t size)
             return PyErr_NoMemory();
         }
     }
-    Py_SIZE(op) = size;
+    Py_SIZE(op) = size;     /* #define Py_SIZE(ob) (((PyVarObject*)(ob))->ob_size) */
     op->allocated = size;
     _PyObject_GC_TRACK(op);
+
+	trace_list_new(size, op);
+
     return (PyObject *) op;
 }
 
@@ -3338,4 +3343,26 @@ listiter_reduce_general(void *_it, int forward)
     if (list == NULL)
         return NULL;
     return Py_BuildValue("N(N)", _PyObject_GetBuiltin("iter"), list);
+}
+
+static
+void trace_list_new(Py_ssize_t size, PyListObject *op)
+{
+	if (_Py_GetMy_Debug() == 1)
+	{
+		/*
+			aim to reduce info print, I limit that if list's size >= 3, then print list's info
+			because when we print a info and system do some preprocess, Cpython internal will new
+			some temp list to store some extra info
+		 */
+		// printf("create a list with size=%d\n", size);
+		if (size >= 3) 
+		{
+			printf("[trace_list_new]\n");
+			printf("new list's ob_size=%d, ", op->ob_base.ob_size);
+			printf("allocated=%d, ", op->allocated);
+			printf("ob_item.address @%p\n", op->ob_item);
+			printf("[trace_list_new]\n");
+		}
+	}
 }

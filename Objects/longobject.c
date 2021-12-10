@@ -45,6 +45,8 @@ static PyLongObject small_ints[NSMALLNEGINTS + NSMALLPOSINTS];
 Py_ssize_t quick_int_allocs, quick_neg_int_allocs;
 #endif
 
+static void show_small_int(char* func_name, PyObject* v);
+
 static PyObject *
 get_small_int(sdigit ival)
 {
@@ -519,7 +521,6 @@ PyLong_AsSsize_t(PyObject *vv) {
     size_t x, prev;
     Py_ssize_t i;
     int sign;
-
     if (vv == NULL) {
         PyErr_BadInternalCall();
         return -1;
@@ -562,6 +563,7 @@ PyLong_AsSsize_t(PyObject *vv) {
   overflow:
     PyErr_SetString(PyExc_OverflowError,
                     "Python int too large to convert to C ssize_t");
+
     return -1;
 }
 
@@ -649,6 +651,7 @@ PyLong_AsSize_t(PyObject *vv)
             return (size_t) -1;
         }
     }
+
     return x;
 }
 
@@ -1188,7 +1191,6 @@ PyLong_FromSize_t(size_t ival)
     PyLongObject *v;
     size_t t;
     int ndigits = 0;
-
     if (ival < PyLong_BASE)
         return PyLong_FromLong((long)ival);
     /* Count the number of Python digits. */
@@ -1765,6 +1767,7 @@ long_to_decimal_string(PyObject *aa)
     PyObject *v;
     if (long_to_decimal_string_internal(aa, &v, NULL, NULL, NULL) == -1)
         return NULL;
+	show_small_int("long_to_decimal_string", v);
     return v;
 }
 
@@ -5524,3 +5527,49 @@ PyLong_Fini(void)
     }
 #endif
 }
+
+/* 考察整型对象的小整数缓冲池 */
+static void 
+show_small_int(char* func_name, PyObject* v)
+{
+	if (_Py_GetMy_Debug() == 1)
+	{
+		int values[10];
+		int refcounts[10];
+		PyLongObject intObjPtr;
+
+		printf("[%s]\n", func_name);
+		// printf("address is @%p\n", v);
+		// 考察小整数对象池的信息
+		for (int i = 0; i < 10; ++i)
+		{
+			if (small_ints[i].ob_base.ob_size == 0)
+			{
+				values[i] = 0;
+			}
+			else
+			{
+				values[i] = small_ints[i].ob_digit[0];
+				if (i <= 4)
+				{
+					values[i] *= -1;
+				}
+			}
+			refcounts[i] = small_ints[i].ob_base.ob_base.ob_refcnt;
+		}
+		printf("  value : ");
+		for (int i = 0; i < 8; ++i)
+		{
+			printf("%d\t", values[i]);
+		}
+		printf("\n");
+		printf(" refcnt : ");
+		for (int i = 0; i < 8; ++i)
+		{
+			printf("%d\t", refcounts[i]);
+		}
+		printf("\n");
+		printf("[%s]\n", func_name);
+	}
+}
+

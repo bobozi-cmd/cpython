@@ -1516,6 +1516,7 @@ PyErr_CheckSignals(void)
     if (!_Py_atomic_load(&is_tripped))
         return 0;
 
+	/* 不在主线程下调用该函数，则不做任何处理，直接返回0 */ 
     if (PyThread_get_thread_ident() != main_thread)
         return 0;
 
@@ -1525,6 +1526,11 @@ PyErr_CheckSignals(void)
      * signal has arrived. This variable is set to 1 when a signal arrives
      * and it is set to 0 here, when we know some signals arrived. This way
      * we can run the registered handlers with no signals blocked.
+
+	 is_tripped变量用于在没有信号到达时加速对PyErr_CheckSignals的调用（直接调用或通过挂起调用）。
+	 当信号到达时，这个变量被设置为1，当我们知道一些信号到达时，它在这里被设置为0。
+	 通过这种方式，我们可以在不阻塞信号的情况下运行已注册的处理程序。
+
      *
      * NOTE: with this approach we can have a situation where is_tripped is
      *       1 but we have no more signals to handle (Handlers[i].tripped
@@ -1532,6 +1538,12 @@ PyErr_CheckSignals(void)
      *       we're gonna spent some cycles for nothing). This happens when
      *       we receive a signal i after we zero is_tripped and before we
      *       check Handlers[i].tripped.
+
+	 使用这种方法，我们可能会遇到这样的情况：is_tripped为1，
+	 但我们没有更多的信号要处理（ 对于每个信号i，Handlers[i].tripped都为0）。
+	 这不会对我们造成任何伤害（除非我们会白白浪费一些周期）。
+	 当我们在零点被触发之后，在检查处理程序[i]之前收到信号i时，就会发生这种情况。
+
      */
     _Py_atomic_store(&is_tripped, 0);
 

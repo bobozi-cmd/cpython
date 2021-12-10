@@ -144,9 +144,13 @@ PyAPI_FUNC(PyObject *) _PyEval_EvalFrameDefault(struct _frame *f, int exc);
 
 /* Interface for threads.
 
+	线程接口
+
    A module that plans to do a blocking system call (or something else
    that lasts a long time and doesn't touch Python data) can allow other
    threads to run as follows:
+
+   计划执行阻塞系统调用的模块（或持续很长时间且不接触Python数据的其他模块）可以允许其他线程按如下方式运行：
 
     ...preparations here...
     Py_BEGIN_ALLOW_THREADS
@@ -156,6 +160,9 @@ PyAPI_FUNC(PyObject *) _PyEval_EvalFrameDefault(struct _frame *f, int exc);
 
    The Py_BEGIN_ALLOW_THREADS/Py_END_ALLOW_THREADS pair expands to a
    {}-surrounded block.
+
+   Py_BEGIN_ALLOW_THREADS/Py_END_ALLOW_THREADS配对被扩展为{}包围的块。
+
    To leave the block in the middle (e.g., with return), you must insert
    a line containing Py_BLOCK_THREADS before the return, e.g.
 

@@ -73,7 +73,7 @@ type and back.
 
 对象总是通过“PyObject*”类型的指针访问。类型“PyObject”是一个仅包含引用计数（ob_refcnt）和类型指针（ob_type）的结构。
 为对象分配的实际内存包含其他数据，这些数据只有在将指针转换为较长结构类型的指针后才能访问。
-这个较长的类型必须以引用计数和类型字段开头（PyObject_HEAD）；应使用宏PyObject_头进行此操作（以适应将来的更改）。
+这个较长的类型必须以引用计数和类型字段开头（PyObject_HEAD）；应使用宏PyObject_HEAD进行此操作（以适应将来的更改）。
 特定对象类型的实现可以将对象指针强制转换为正确的类型并返回。
 
 A standard interface exists for objects that contain an array of items
@@ -159,7 +159,7 @@ typedef struct _object {
 
 typedef struct {
     PyObject ob_base;            /* 包含ob_refcnt和ob_type */
-    Py_ssize_t ob_size; /* Number of items in variable part 可变对象可容纳的元素个数，大小可变 */
+    Py_ssize_t ob_size; /* Number of items in variable part 变长对象可容纳的元素个数，大小可变 */
 } PyVarObject;
 
 #define Py_REFCNT(ob)           (((PyObject*)(ob))->ob_refcnt)
@@ -879,11 +879,19 @@ you can count such references to the type object.)
  */
 #ifdef Py_REF_DEBUG
 PyAPI_DATA(Py_ssize_t) _Py_RefTotal;
+/* flag to show my debug mode*/
+PyAPI_DATA(Py_ssize_t) my_debug;
+/* flag to show my debug mode*/
 PyAPI_FUNC(void) _Py_NegativeRefcount(const char *fname,
                                             int lineno, PyObject *op);
 PyAPI_FUNC(Py_ssize_t) _Py_GetRefTotal(void);
 #define _Py_INC_REFTOTAL        _Py_RefTotal++
 #define _Py_DEC_REFTOTAL        _Py_RefTotal--
+/* my_debug func */
+PyAPI_FUNC(Py_ssize_t) _Py_GetMy_Debug(void);
+#define _Py_MYDEBUG_ON         my_debug = 1
+#define _Py_MYDEBUG_OFF        my_debug = 0
+/* my_debug func */
 #define _Py_REF_DEBUG_COMMA     ,
 #define _Py_CHECK_REFCNT(OP)                                    \
 {       if (((PyObject*)OP)->ob_refcnt < 0)                             \

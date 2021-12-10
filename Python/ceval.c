@@ -247,7 +247,11 @@ _PyEval_SignalAsyncExc(void)
 
 /* Functions save_thread and restore_thread are always defined so
    dynamically loaded modules needn't be compiled separately for use
-   with and without threads: */
+   with and without threads: 
+   
+   函数save_thread和restore_thread始终是定义的，因此动态加载的模块无需单独编译以用于有线程和无线程：
+
+   */
 
 PyThreadState *
 PyEval_SaveThread(void)

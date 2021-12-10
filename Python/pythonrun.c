@@ -1468,6 +1468,7 @@ cleanup:
 
 /*
  * Return non-zero when we run out of memory on the stack; zero otherwise.
+ 当堆栈上的内存用完时，返回非零；否则归零
  */
 int
 PyOS_CheckStack(void)
