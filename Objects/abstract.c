@@ -10,6 +10,10 @@
 
 /* Shorthands to return certain errors */
 
+#ifdef Py_REF_DEBUG
+static void trace_pynumber_long();
+#endif
+
 static PyObject *
 type_error(const char *msg, PyObject *obj)
 {
@@ -1347,6 +1351,11 @@ PyNumber_Long(PyObject *o)
     Py_buffer view;
     _Py_IDENTIFIER(__trunc__);
 
+#ifdef Py_REF_DEBUG
+	trace_pynumber_long();
+
+#endif
+
     if (o == NULL) {
         return null_error();
     }
@@ -2637,3 +2646,9 @@ _Py_FreeCharPArray(char *const array[])
     }
     PyMem_Free((void*)array);
 }
+
+#ifdef Py_REF_DEBUG
+static void trace_pynumber_long() {
+	Py_MyDebug_number_long();
+}
+#endif

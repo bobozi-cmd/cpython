@@ -77,8 +77,8 @@ Either:
     Values are stored in the me_value field of the PyDictKeysObject.
 要么：
   组合表：
-	ma_值==NULL，dk_refcnt==1。
-	值存储在PyDictKeysObject的me_值字段中。
+	ma_value==NULL，dk_refcnt==1。
+	值存储在PyDictKeysObject的me_value字段中。
 Or:
   A split table:
     ma_values != NULL, dk_refcnt >= 1
@@ -88,7 +88,7 @@ Or:
 或：
   拆分表：
 	ma_values！=NULL，dk_refcnt>=1
-	值存储在ma_值数组中。
+	值存储在ma_value数组中。
 	只允许使用字符串（unicode）键。
 	共享同一密钥的所有DICT必须具有相同的插入顺序。
 

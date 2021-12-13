@@ -45,7 +45,26 @@ static PyLongObject small_ints[NSMALLNEGINTS + NSMALLPOSINTS];
 Py_ssize_t quick_int_allocs, quick_neg_int_allocs;
 #endif
 
+#ifdef Py_REF_DEBUG
+
+/*
+Py_ssize_t my_long_create_step = Py_MYLONG_CREATE_TRACE_OFF;
+
+Py_ssize_t
+_Py_GetMy_Long_Create_Step(void) {
+	Py_ssize_t step = my_long_create_step;
+	return step;
+}
+*/
+
 static void show_small_int(char* func_name, PyObject* v);
+
+static void trace_int_create(PyTypeObject *type, PyObject *x, PyObject *obase);
+
+static void trace_pylong_fromlong();
+static void trace_pylong_fromunicodeobject(PyObject * obj);
+static void trace_pylong_frombytes(PyObject * obj);
+#endif
 
 static PyObject *
 get_small_int(sdigit ival)
@@ -213,6 +232,7 @@ _PyLong_New(Py_ssize_t size)
         PyErr_NoMemory();
         return NULL;
     }
+
     return (PyLongObject*)PyObject_INIT_VAR(result, &PyLong_Type, size);
 }
 
@@ -249,6 +269,10 @@ PyLong_FromLong(long ival)
     unsigned long t;  /* unsigned so >> doesn't propagate sign bit */
     int ndigits = 0;
     int sign;
+
+#ifdef Py_REF_DEBUG
+	trace_pylong_fromlong();
+#endif
 
     CHECK_SMALL_INT(ival);
 
@@ -1767,7 +1791,9 @@ long_to_decimal_string(PyObject *aa)
     PyObject *v;
     if (long_to_decimal_string_internal(aa, &v, NULL, NULL, NULL) == -1)
         return NULL;
-	show_small_int("long_to_decimal_string", v);
+#ifdef Py_REF_DEBUG
+	show_small_int("long_to_decimal_string", aa);
+#endif
     return v;
 }
 
@@ -2485,7 +2511,11 @@ _PyLong_FromBytes(const char *s, Py_ssize_t len, int base)
 
     result = PyLong_FromString(s, &end, base);
     if (end == NULL || (result != NULL && end == s + len))
+#ifdef Py_REF_DEBUG
+		trace_pylong_frombytes(result);
+#endif
         return result;
+
     Py_XDECREF(result);
     strobj = PyBytes_FromStringAndSize(s, Py_MIN(len, 200));
     if (strobj != NULL) {
@@ -2494,6 +2524,9 @@ _PyLong_FromBytes(const char *s, Py_ssize_t len, int base)
                      base, strobj);
         Py_DECREF(strobj);
     }
+#ifdef Py_REF_DEBUG
+	trace_pylong_frombytes(strobj);
+#endif
     return NULL;
 }
 
@@ -2515,6 +2548,10 @@ PyLong_FromUnicodeObject(PyObject *u, int base)
     const char *buffer;
     char *end = NULL;
     Py_ssize_t buflen;
+
+#ifdef Py_REF_DEBUG
+	trace_pylong_fromunicodeobject(u);
+#endif
 
     asciidig = _PyUnicode_TransformDecimalAndSpaceToASCII(u);
     if (asciidig == NULL)
@@ -2757,7 +2794,12 @@ _PyLong_Frexp(PyLongObject *a, Py_ssize_t *e)
     double dx;
     /* Correction term for round-half-to-even rounding.  For a digit x,
        "x + half_even_correction[x & 7]" gives x rounded to the nearest
-       multiple of 4, rounding ties to a multiple of 8. */
+       multiple of 4, rounding ties to a multiple of 8. 
+	   
+	   四舍五入到偶数四舍五入的修正项。对于数字x，
+	   “x+半偶校正[x&amp;7]”将x四舍五入到4的最近倍数，四舍五入与8的倍数成正比。
+
+	   */
     static const int half_even_correction[8] = {0, -1, -2, 1, 0, -1, 2, 1};
 
     a_size = Py_ABS(Py_SIZE(a));
@@ -2767,7 +2809,7 @@ _PyLong_Frexp(PyLongObject *a, Py_ssize_t *e)
         return 0.0;
     }
     a_bits = bits_in_digit(a->ob_digit[a_size-1]);
-    /* The following is an overflow-free version of the check
+    /* The following is an overflow-free version of the check   以下是检查的无溢出版本
        "if ((a_size - 1) * PyLong_SHIFT + a_bits > PY_SSIZE_T_MAX) ..." */
     if (a_size >= (PY_SSIZE_T_MAX - 1) / PyLong_SHIFT + 1 &&
         (a_size > (PY_SSIZE_T_MAX - 1) / PyLong_SHIFT + 1 ||
@@ -2905,6 +2947,7 @@ long_compare(PyLongObject *a, PyLongObject *b)
     Py_ssize_t sign;
 
     if (Py_SIZE(a) != Py_SIZE(b)) {
+		/* longobject的ob_size提示了符号的正负 */
         sign = Py_SIZE(a) - Py_SIZE(b);
     }
     else {
@@ -2919,6 +2962,7 @@ long_compare(PyLongObject *a, PyLongObject *b)
                 sign = -sign;
         }
     }
+	/* a<b -> -1; a>b -> 1; a==b -> 0*/
     return sign < 0 ? -1 : sign > 0 ? 1 : 0;
 }
 
@@ -4794,11 +4838,18 @@ int.__new__ as long_new
     base as obase: object(c_default="NULL") = 10
 [clinic start generated code]*/
 
+/*
+	int() method
+*/
 static PyObject *
 long_new_impl(PyTypeObject *type, PyObject *x, PyObject *obase)
 /*[clinic end generated code: output=e47cfe777ab0f24c input=81c98f418af9eb6f]*/
 {
     Py_ssize_t base;
+
+#ifdef Py_REF_DEBUG
+	trace_int_create(type, x, obase);
+#endif
 
     if (type != &PyLong_Type)
         return long_subtype_new(type, x, obase); /* Wimp out */
@@ -5507,6 +5558,8 @@ _PyLong_Init(void)
             return 0;
     }
 
+	printf("[_PyLong_Init]before python interpreter start，small_ints has been init\n");
+
     return 1;
 }
 
@@ -5529,47 +5582,35 @@ PyLong_Fini(void)
 }
 
 /* 考察整型对象的小整数缓冲池 */
+#ifdef Py_REF_DEBUG
 static void 
 show_small_int(char* func_name, PyObject* v)
 {
-	if (_Py_GetMy_Debug() == 1)
-	{
-		int values[10];
-		int refcounts[10];
-		PyLongObject intObjPtr;
-
-		printf("[%s]\n", func_name);
-		// printf("address is @%p\n", v);
-		// 考察小整数对象池的信息
-		for (int i = 0; i < 10; ++i)
-		{
-			if (small_ints[i].ob_base.ob_size == 0)
-			{
-				values[i] = 0;
-			}
-			else
-			{
-				values[i] = small_ints[i].ob_digit[0];
-				if (i <= 4)
-				{
-					values[i] *= -1;
-				}
-			}
-			refcounts[i] = small_ints[i].ob_base.ob_base.ob_refcnt;
-		}
-		printf("  value : ");
-		for (int i = 0; i < 8; ++i)
-		{
-			printf("%d\t", values[i]);
-		}
-		printf("\n");
-		printf(" refcnt : ");
-		for (int i = 0; i < 8; ++i)
-		{
-			printf("%d\t", refcounts[i]);
-		}
-		printf("\n");
-		printf("[%s]\n", func_name);
-	}
+	
+	Py_MyDebug_Small_Ints(func_name, v, small_ints);
 }
+
+static void
+trace_int_create(PyTypeObject *type, PyObject *x, PyObject *obase)
+{
+
+	Py_MyDebug_longobject_create(type, x, obase);
+}
+
+static void
+trace_pylong_fromlong() {
+	Py_MyDebug_long_fromlong();
+}
+
+static void
+trace_pylong_fromunicodeobject(PyObject * obj) {
+	Py_MyDebug_long_fromunicodeobject(obj);
+}
+
+
+static void
+trace_pylong_frombytes(PyObject * obj) {
+	Py_MyDebug_long_frombytes(obj);
+}
+#endif
 

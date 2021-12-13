@@ -6,6 +6,7 @@
 #include "internal/context.h"
 #include "frameobject.h"
 
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -19,13 +20,14 @@ _Py_IDENTIFIER(builtins);
 #ifdef Py_REF_DEBUG
 Py_ssize_t _Py_RefTotal;
 
-Py_ssize_t my_debug = 0;
-
+//Py_ssize_t my_debug = Py_MYDEBUG_OFF;
+/*
 Py_ssize_t
 _Py_GetMy_Debug(void) {
 	Py_ssize_t mode = my_debug;
-	return my_debug;
+	return mode;
 }
+*/
 
 Py_ssize_t
 _Py_GetRefTotal(void)
@@ -554,7 +556,7 @@ PyObject_Str(PyObject *v)
 #endif
 
 #ifdef Py_REF_DEBUG
-	/* start my debug mode by print("myDebugOn") */
+	/* start my debug mode by print("myDebugOnxxx") */
 	switch_my_debug(v);
 	/* end my debug mode by print("myDebugOff") */
 #endif
@@ -2047,7 +2049,9 @@ _Py_GetObjects(PyObject *self, PyObject *args)
     for (i = 0; (n == 0 || i < n) && op != &refchain; i++) {
         while (op == self || op == args || op == res || op == t ||
                (t != NULL && Py_TYPE(op) != (PyTypeObject *) t)) {
-            op = op->_ob_next;
+            /* op = op->_ob_next; */
+			if (op)
+				op = op->_ob_next;
             if (op == &refchain)
                 return res;
         }
@@ -2267,26 +2271,8 @@ _Py_Dealloc(PyObject *op)
 /* this func used to open or close my_debug mode */
 static void
 switch_my_debug(PyObject* v) {
-	/* start my debug mode by print("myDebugOn") */
-	if (PyUnicode_Check(v)) {
 
-		PyObject* cmp_on = PyUnicode_FromString("myDebugOn");
-		PyObject* cmp_off = PyUnicode_FromString("myDebugOff");
-
-		if (PyUnicode_Compare(cmp_on, v) == 0) {
-			printf("<my_debug is %d\n", my_debug);
-			printf("[myDebug mode on]\n");
-			_Py_MYDEBUG_ON;
-			printf("my_debug become %d>\n", my_debug);
-		}
-		else if (PyUnicode_Compare(cmp_off, v) == 0) {
-			printf("<my_debug is %d\n", my_debug);
-			printf("[myDebug mode close]\n");
-			_Py_MYDEBUG_OFF;
-			printf("my_debug become %d>\n", my_debug);
-		}
-
-	}
-	/* end my debug mode by print("myDebugOff") */
+    Py_MyDebug_Switch(v);
+	
 }
 #endif

@@ -471,6 +471,10 @@
     <ClInclude Include="$(zlibDir)\zutil.h">
       <Filter>Modules\zlib</Filter>
     </ClInclude>
+    <ClInclude Include="D:\Windows Kits\10\Include\10.0.17763.0\um\apiquery2.h" />
+    <ClInclude Include="..\Include\mydebugobject.h">
+      <Filter>Include</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Modules\_abc.c">
@@ -1042,6 +1046,9 @@
     </ClCompile>
     <ClCompile Include="..\Python\context.c" />
     <ClCompile Include="..\Python\hamt.c" />
+    <ClCompile Include="..\Objects\mydebugobject.c">
+      <Filter>Objects</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\PC\python_nt.rc">

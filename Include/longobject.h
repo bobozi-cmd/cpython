@@ -277,6 +277,17 @@ PyAPI_DATA(PyObject *) _PyLong_Zero;
 PyAPI_DATA(PyObject *) _PyLong_One;
 #endif
 
+#ifdef Py_REF_DEBUG
+/* trace longobject's create operation*/
+//PyAPI_DATA(Py_ssize_t) my_long_create_step;
+//PyAPI_FUNC(Py_ssize_t) _Py_GetMy_Long_Create_Step(void);
+//#define _Py_MY_LONG_CREATE_TRACE_ON     my_long_create_step = 0
+//#define _Py_MY_LONG_CREATE_TRACE_OFF    my_long_create_step = -1
+//#define _Py_MY_LONG_CREATE_TRACE_NEXT    my_long_create_step++
+/* if my_long_create_step > -1, then trace mode on*/
+//#define Py_MYLONG_CREATE_TRACE_OFF -1
+#endif
+
 #ifdef __cplusplus
 }
 #endif

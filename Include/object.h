@@ -880,7 +880,7 @@ you can count such references to the type object.)
 #ifdef Py_REF_DEBUG
 PyAPI_DATA(Py_ssize_t) _Py_RefTotal;
 /* flag to show my debug mode*/
-PyAPI_DATA(Py_ssize_t) my_debug;
+// PyAPI_DATA(Py_ssize_t) my_debug;
 /* flag to show my debug mode*/
 PyAPI_FUNC(void) _Py_NegativeRefcount(const char *fname,
                                             int lineno, PyObject *op);
@@ -888,9 +888,19 @@ PyAPI_FUNC(Py_ssize_t) _Py_GetRefTotal(void);
 #define _Py_INC_REFTOTAL        _Py_RefTotal++
 #define _Py_DEC_REFTOTAL        _Py_RefTotal--
 /* my_debug func */
-PyAPI_FUNC(Py_ssize_t) _Py_GetMy_Debug(void);
-#define _Py_MYDEBUG_ON         my_debug = 1
-#define _Py_MYDEBUG_OFF        my_debug = 0
+// PyAPI_FUNC(Py_ssize_t) _Py_GetMy_Debug(void);
+// #define _Py_MYDEBUG_ON_LONG    my_debug = 4
+// #define _Py_MYDEBUG_ON_LIST    my_debug = 3
+// #define _Py_MYDEBUG_ON_DICT    my_debug = 2
+// #define _Py_MYDEBUG_ON_ALL     my_debug = 1
+// #define _Py_MYDEBUG_OFF        my_debug = 0
+/*
+#define Py_MYDEBUG_LONG 4
+#define Py_MYDEBUG_LIST 3
+#define Py_MYDEBUG_DICT 2
+#define Py_MYDEBUG_ALL  1
+#define Py_MYDEBUG_OFF  0
+*/
 /* my_debug func */
 #define _Py_REF_DEBUG_COMMA     ,
 #define _Py_CHECK_REFCNT(OP)                                    \

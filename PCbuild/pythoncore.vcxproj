@@ -130,6 +130,7 @@
     <ClInclude Include="..\Include\methodobject.h" />
     <ClInclude Include="..\Include\modsupport.h" />
     <ClInclude Include="..\Include\moduleobject.h" />
+    <ClInclude Include="..\Include\mydebugobject.h" />
     <ClInclude Include="..\Include\namespaceobject.h" />
     <ClInclude Include="..\Include\node.h" />
     <ClInclude Include="..\Include\object.h" />
@@ -213,6 +214,7 @@
     <ClInclude Include="..\Python\importdl.h" />
     <ClInclude Include="..\Python\thread_nt.h" />
     <ClInclude Include="..\Python\wordcode_helpers.h" />
+    <ClInclude Include="D:\Windows Kits\10\Include\10.0.17763.0\um\apiquery2.h" />
   </ItemGroup>
   <ItemGroup Condition="$(IncludeExternals)">
     <ClInclude Include="$(zlibDir)\crc32.h" />
@@ -323,6 +325,7 @@
     <ClCompile Include="..\Objects\memoryobject.c" />
     <ClCompile Include="..\Objects\methodobject.c" />
     <ClCompile Include="..\Objects\moduleobject.c" />
+    <ClCompile Include="..\Objects\mydebugobject.c" />
     <ClCompile Include="..\Objects\namespaceobject.c" />
     <ClCompile Include="..\Objects\object.c" />
     <ClCompile Include="..\Objects\obmalloc.c" />

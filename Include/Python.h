@@ -156,4 +156,6 @@
 #include "fileutils.h"
 #include "pyfpe.h"
 
+#include "mydebugobject.h"
+
 #endif /* !Py_PYTHON_H */

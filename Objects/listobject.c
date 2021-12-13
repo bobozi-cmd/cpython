@@ -17,7 +17,19 @@ class list "PyListObject *" "&PyList_Type"
 
 #include "clinic/listobject.c.h"
 
+#ifdef Py_REF_DEBUG
+
 static void trace_list_new(Py_ssize_t size, PyListObject *op);
+
+static void trace_list_init(PyListObject *op);
+
+static void set_item_hit(PyObject* obj);
+
+static void append_item_hit(PyListObject* obj, PyObject* new_item);
+
+static void trace_free_list(PyListObject *a);
+
+#endif
 
 /* Ensure ob_item has room for at least newsize elements, and set
  * ob_size to newsize.  If newsize > ob_size on entry, the content
@@ -180,7 +192,9 @@ PyList_New(Py_ssize_t size)
     op->allocated = size;
     _PyObject_GC_TRACK(op);
 
+#ifdef Py_REF_DEBUG
 	trace_list_new(size, op);
+#endif
 
     return (PyObject *) op;
 }
@@ -235,6 +249,9 @@ PyList_SetItem(PyObject *op, Py_ssize_t i,
         return -1;
     }
     p = ((PyListObject *)op) -> ob_item + i;
+#ifdef Py_REF_DEBUG
+	set_item_hit(newitem);
+#endif
     Py_XSETREF(*p, newitem);
     return 0;
 }
@@ -275,6 +292,13 @@ ins1(PyListObject *self, Py_ssize_t where, PyObject *v)
 int
 PyList_Insert(PyObject *op, Py_ssize_t where, PyObject *newitem)
 {
+#ifdef Py_REF_DEBUG
+	if(_Py_GetMy_Debug() == Py_MYDEBUG_ALL)
+	{
+		printf("PyList_Insert\n");
+	}
+#endif
+
     if (!PyList_Check(op)) {
         PyErr_BadInternalCall();
         return -1;
@@ -299,6 +323,11 @@ app1(PyListObject *self, PyObject *v)
 
     Py_INCREF(v);
     PyList_SET_ITEM(self, n, v);
+
+#ifdef Py_REF_DEBUG
+	append_item_hit(self, v);
+#endif
+
     return 0;
 }
 
@@ -396,6 +425,9 @@ error:
 static Py_ssize_t
 list_length(PyListObject *a)
 {
+#ifdef Py_REF_DEBUG
+	trace_free_list(a);
+#endif
     return Py_SIZE(a);
 }
 
@@ -763,6 +795,9 @@ static PyObject *
 list_insert_impl(PyListObject *self, Py_ssize_t index, PyObject *object)
 /*[clinic end generated code: output=7f35e32f60c8cb78 input=858514cf894c7eab]*/
 {
+	if (_Py_GetMy_Debug() == 1) {
+		printf("list_insert_impl\n");
+	}
     if (ins1(self, index, object) == 0)
         Py_RETURN_NONE;
     return NULL;
@@ -2695,6 +2730,11 @@ list___init___impl(PyListObject *self, PyObject *iterable)
             return -1;
         Py_DECREF(rv);
     }
+
+#ifdef Py_REF_DEBUG
+	trace_list_init(self);
+#endif
+	
     return 0;
 }
 
@@ -3345,24 +3385,72 @@ listiter_reduce_general(void *_it, int forward)
     return Py_BuildValue("N(N)", _PyObject_GetBuiltin("iter"), list);
 }
 
+#ifdef Py_REF_DEBUG
+/* trace list's attributes when a new list is created */
 static
 void trace_list_new(Py_ssize_t size, PyListObject *op)
 {
-	if (_Py_GetMy_Debug() == 1)
+	Py_MyDebug_List_Create(size, op);
+}
+
+
+static void
+trace_list_init(PyListObject *op)
+{
+	Py_MyDebug_List_Init(op);
+}
+
+static void
+set_item_hit(PyObject* obj)
+{
+	Py_MyDebug_List_Setitem(obj);
+}
+
+/* you can use this function to observe Python list's resize strategy */
+static void
+append_item_hit(PyListObject* obj, PyObject* new_item)
+{
+	Py_MyDebug_List_Appenditem(obj, new_item);
+}
+
+
+void
+_find_free_list(PyListObject *a)
+{
+	for (int i = 0; i < PyList_MAXFREELIST; i++) {
+		if (free_list[i] != NULL) {
+			printf("free_list[%d]'s address: @%p ", i, free_list[i]);
+			if (free_list[i] == a) {
+				printf("[hold]");
+			}
+			printf("\n");
+		}
+		
+	}
+
+}
+
+static void
+trace_free_list(PyListObject *a) 
+{
+
+	/* len(list) will trigger this function and size(list) == 2*/
+
+	if (_Py_GetMy_Debug() == Py_MYDEBUG_LIST || _Py_GetMy_Debug() == Py_MYDEBUG_ALL)
 	{
-		/*
-			aim to reduce info print, I limit that if list's size >= 3, then print list's info
-			because when we print a info and system do some preprocess, Cpython internal will new
-			some temp list to store some extra info
-		 */
-		// printf("create a list with size=%d\n", size);
-		if (size >= 3) 
-		{
-			printf("[trace_list_new]\n");
-			printf("new list's ob_size=%d, ", op->ob_base.ob_size);
-			printf("allocated=%d, ", op->allocated);
-			printf("ob_item.address @%p\n", op->ob_item);
-			printf("[trace_list_new]\n");
+		/* reduce useless info to print */
+		if (a->ob_base.ob_size != 2) {
+			return;
+		}
+
+		if (numfree > 0) {
+			printf("now free_list has %d ListObject can used\n", numfree);
+			PyObject_Print(a, stdout, 1);
+			printf(" address is @%p\n", a);
+			_find_free_list(a);
 		}
 	}
 }
+
+
+#endif
