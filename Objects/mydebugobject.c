@@ -2,6 +2,7 @@
 
 #include "Python.h"
 #include "mydebugobject.h"
+#include "dict-common.h"
 #include "internal/pystate.h"
 #include "accu.h"
 
@@ -59,6 +60,12 @@ void Py_MyDebug_List_Init(PyListObject* op);
 void Py_MyDebug_List_Setitem(PyObject* op);
 
 void Py_MyDebug_List_Appenditem(PyListObject* obj, PyObject* new_item);
+
+/* PyDictObject */
+
+void Py_MyDebug_Dict_Create(PyObject* self);
+
+/* PyMyDebugObject */
 
 PyObject*
 PyMyDebug_New()
@@ -598,4 +605,53 @@ Py_MyDebug_List_Appenditem(PyListObject* obj, PyObject* new_item)
 		return;
 	}
 	list_appenditem_trace(obj, new_item);
+}
+
+static void
+dict_create_trace(PyObject *self)
+{
+	if (_Py_GetMy_Debug() == Py_MYDEBUG_DICT || _Py_GetMy_Debug() == Py_MYDEBUG_ALL)
+	{
+
+		if (!PyDict_Check(self)) {
+			return;
+		}
+
+		PyDictObject *d = (PyDictObject*)self;
+
+		printf("[dict_new]create a new dict\n");
+		printf("\tma_used is %d\n", d->ma_used);
+		printf("\tma_version_tag is %d\n", d->ma_version_tag);
+
+		PyDictKeysObject* keys = d->ma_keys;
+
+		printf("\tdk_size is %d\n", keys->dk_size);
+		/*
+		A combined table: ma_values == NULL, dk_refcnt == 1.
+		A split table:    ma_values != NULL, dk_refcnt >= 1
+		*/
+		if (d->ma_values == NULL && keys->dk_refcnt == 1) {
+			printf("it is a combined table\n");
+		}
+		else if (d->ma_values != NULL && keys->dk_refcnt >= 1)
+		{
+			printf("it is a split table\n");
+		}
+		else
+		{
+			printf("it is not inited\n");
+		}
+
+		printf("[dict_new]\n");
+	}
+
+}
+
+void
+Py_MyDebug_Dict_Create(PyObject* self)
+{
+	if (self == NULL) {
+		return;
+	}
+	dict_create_trace(self);
 }

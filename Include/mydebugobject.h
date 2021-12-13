@@ -68,6 +68,9 @@ PyAPI_FUNC(void) Py_MyDebug_List_Init(PyListObject* op);
 PyAPI_FUNC(void) Py_MyDebug_List_Setitem(PyObject* op);
 PyAPI_FUNC(void) Py_MyDebug_List_Appenditem(PyListObject* obj, PyObject* new_item);
 
+/* trace dictobject's create operation*/
+PyAPI_FUNC(void) Py_MyDebug_Dict_Create(PyObject* self);
+
 #ifdef __cplusplus
 }
 #endif

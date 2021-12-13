@@ -200,6 +200,10 @@ it's USABLE_FRACTION (currently two-thirds) full.
 
 #define PERTURB_SHIFT 5
 
+#ifdef Py_REF_DEBUG
+static void trace_dict_new(PyObject *self, PyObject *args, PyObject *kwds);
+#endif
+
 /*
 Major subtleties ahead:  Most hash schemes depend on having a "good" hash
 function, in the sense of simulating randomness.  Python doesn't:  its most
@@ -2646,6 +2650,11 @@ dict_update_common(PyObject *self, PyObject *args, PyObject *kwds,
         else
             result = -1;
     }
+
+#ifdef Py_REF_DEBUG
+	trace_dict_new(self, args, kwds);
+#endif
+
     return result;
 }
 
@@ -3621,6 +3630,7 @@ dict_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     PyDictObject *d;
 
     assert(type != NULL && type->tp_alloc != NULL);
+
     self = type->tp_alloc(type, 0);
     if (self == NULL)
         return NULL;
@@ -3638,12 +3648,17 @@ dict_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         return NULL;
     }
     assert(_PyDict_CheckConsistency(d));
+
+
     return self;
 }
 
 static int
 dict_init(PyObject *self, PyObject *args, PyObject *kwds)
 {
+#ifdef Py_REF_DEBUG
+	trace_dict_new(self, args, kwds);
+#endif
     return dict_update_common(self, args, kwds, "dict");
 }
 
@@ -4885,3 +4900,16 @@ _PyDictKeys_DecRef(PyDictKeysObject *keys)
 {
     DK_DECREF(keys);
 }
+
+
+#ifdef Py_REF_DEBUG
+
+static void 
+trace_dict_new(PyObject *self, PyObject *args, PyObject *kwds) 
+{
+
+	Py_MyDebug_Dict_Create(self);
+
+}
+
+#endif
