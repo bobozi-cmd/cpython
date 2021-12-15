@@ -39,6 +39,7 @@ PyObject *_PyLong_One = NULL;
    can be shared.
    The integers that are preallocated are those in the range
    -NSMALLNEGINTS (inclusive) to NSMALLPOSINTS (not inclusive).
+   小整数池，范围为-NSMALLNEGINTS - NSMALLPOSINTS
 */
 static PyLongObject small_ints[NSMALLNEGINTS + NSMALLPOSINTS];
 #ifdef COUNT_ALLOCS
@@ -160,7 +161,11 @@ long_normalize(PyLongObject *v)
    using the nb_int slot, if available.  Raise TypeError if either the
    nb_int slot is not available or the result of the call to nb_int
    returns something not of type int.
-*/
+
+   _PyLong_FromNbInt：使用nb_int插槽（如果可用）将给定对象转换为PyLong对象。
+   如果nb_int插槽不可用或调用nb_int的结果返回的不是int类型的内容，则引发TypeError。
+   
+   */
 PyLongObject *
 _PyLong_FromNbInt(PyObject *integral)
 {
@@ -828,7 +833,11 @@ _PyLong_FromByteArray(const unsigned char* bytes, size_t n,
 
     /* Compute numsignificantbytes.  This consists of finding the most
        significant byte.  Leading 0 bytes are insignificant if the number
-       is positive, and leading 0xff bytes if negative. */
+       is positive, and leading 0xff bytes if negative. 
+	   
+	   计算有效字节数。这包括查找最高有效字节。如果数字为正，则前导0字节不重要，如果为负，则前导0xff字节不重要。
+
+	   */
     {
         size_t i;
         const unsigned char* p = pendbyte;
@@ -1603,7 +1612,11 @@ divrem1(PyLongObject *a, digit n, digit *prem)
 
 /* Convert an integer to a base 10 string.  Returns a new non-shared
    string.  (Return value is non-shared so that callers can modify the
-   returned value if necessary.) */
+   returned value if necessary.) 
+   
+   将整数转换为以10为基数的字符串。返回一个新的非共享字符串。（返回值是非共享的，因此调用方可以在必要时修改返回值。）
+   
+   */
 
 static int
 long_to_decimal_string_internal(PyObject *aa,
@@ -2214,6 +2227,9 @@ PyLong_FromString(const char *str, char **pend, int base)
 Binary bases can be converted in time linear in the number of digits, because
 Python's representation base is binary.  Other bases (including decimal!) use
 the simple quadratic-time algorithm below, complicated by some speed tricks.
+
+由于Python的表示基是二进制的，所以二进制基可以按时间线性的位数进行转换。
+其他基数（包括小数！）使用下面简单的二次时间算法，并通过一些速度技巧使其复杂化。
 
 First some math:  the largest integer that can be expressed in N base-B digits
 is B**N-1.  Consequently, if we have an N-digit input in base B, the worst-
@@ -2862,7 +2878,12 @@ _PyLong_Frexp(PyLongObject *a, Py_ssize_t *e)
         /* For correct rounding below, we need the least significant
            bit of x to be 'sticky' for this shift: if any of the bits
            shifted out was nonzero, we set the least significant bit
-           of x. */
+           of x. 
+		   
+		   为了在下面进行正确的舍入，我们需要x的最低有效位对于该移位是“粘性”的：
+		   如果移出的任何位是非零的，我们设置x的最低有效位
+
+		   */
         if (rem)
             x_digits[0] |= 1;
         else
@@ -2874,13 +2895,16 @@ _PyLong_Frexp(PyLongObject *a, Py_ssize_t *e)
     }
     assert(1 <= x_size && x_size <= (Py_ssize_t)Py_ARRAY_LENGTH(x_digits));
 
-    /* Round, and convert to double. */
+    /* Round, and convert to double. 转换为双精度 */
     x_digits[0] += half_even_correction[x_digits[0] & 7];
     dx = x_digits[--x_size];
     while (x_size > 0)
         dx = dx * PyLong_BASE + x_digits[--x_size];
 
-    /* Rescale;  make correction if result is 1.0. */
+    /* 
+	Rescale;  make correction if result is 1.0. 
+	重新缩放；如果结果为1.0，则进行校正
+	*/
     dx /= 4.0 * EXP2_DBL_MANT_DIG;
     if (dx == 1.0) {
         if (a_bits == PY_SSIZE_T_MAX)
@@ -2893,7 +2917,10 @@ _PyLong_Frexp(PyLongObject *a, Py_ssize_t *e)
     return Py_SIZE(a) < 0 ? -dx : dx;
 
   overflow:
-    /* exponent > PY_SSIZE_T_MAX */
+    /* 
+	exponent > PY_SSIZE_T_MAX 
+	指数>PY_SSIZE_T_MAX
+	*/
     PyErr_SetString(PyExc_OverflowError,
                     "huge integer: number of bits overflows a Py_ssize_t");
     *e = 0;
@@ -2901,7 +2928,12 @@ _PyLong_Frexp(PyLongObject *a, Py_ssize_t *e)
 }
 
 /* Get a C double from an int object.  Rounds to the nearest double,
-   using the round-half-to-even rule in the case of a tie. */
+   using the round-half-to-even rule in the case of a tie. 
+   
+   从一个int对象中获取一个C双精度浮点。
+   四舍五入到最接近的双精度，使用银行家舍入规则，即四舍六入五凑偶。
+
+   */
 
 double
 PyLong_AsDouble(PyObject *v)
@@ -2921,6 +2953,9 @@ PyLong_AsDouble(PyObject *v)
         /* Fast path; single digit long (31 bits) will cast safely
            to double.  This improves performance of FP/long operations
            by 20%.
+
+		   快速路径；一位数长（31位）将安全地转换为双精度。这将FP/长时间运行的性能提高了20%。
+
         */
         return (double)MEDIUM_VALUE((PyLongObject *)v);
     }
@@ -2951,6 +2986,7 @@ long_compare(PyLongObject *a, PyLongObject *b)
         sign = Py_SIZE(a) - Py_SIZE(b);
     }
     else {
+		/* 直接进行绝对值的比较 */
         Py_ssize_t i = Py_ABS(Py_SIZE(a));
         while (--i >= 0 && a->ob_digit[i] == b->ob_digit[i])
             ;
@@ -3002,10 +3038,17 @@ long_hash(PyLongObject *v)
            want to compute x * 2**PyLong_SHIFT + v->ob_digit[i] modulo
            _PyHASH_MODULUS.
 
+		   这里x是范围为[0, _PyHASH_MODULUS)；
+		   我们要计算x * 2**PyLong_SHIFT + v->ob_digit[i] modulo
+		   _PyHASH_MODULUS
+
            The computation of x * 2**PyLong_SHIFT % _PyHASH_MODULUS
            amounts to a rotation of the bits of x.  To see this, write
 
              x * 2**PyLong_SHIFT = y * 2**_PyHASH_BITS + z
+
+           x * 2**PyLong_SHIFT % _PyHASH_MODULUS的计算结果等于x的移位，
+           看到这，写x * 2**PyLong_SHIFT = y * 2**_PyHASH_BITS + z
 
            where y = x >> (_PyHASH_BITS - PyLong_SHIFT) gives the top
            PyLong_SHIFT bits of x (those that are shifted out of the
@@ -3017,12 +3060,26 @@ long_hash(PyLongObject *v)
 
              x * 2**PyLong_SHIFT = y + z (mod _PyHASH_MODULUS).
 
+		   写入y=x>>（_PyHASH_BITS-PyLong_SHIFT）将x左移PyLong_SHIFT位。
+		   从原始_PyHASH_BITS位移出的那些，并且z = (x << PyLong_SHIFT) &
+		   _PyHASH_MODULUS给出下界值_PyHASH_BITS - PyLong_SHIFT的位，向左移位。
+		   之后，因为2**_PyHASH_BITS与1 modulo _PyHASH_MODULUS一致，
+		   y*2**_PyHASH_BITS与y modulo _PyHASH_MODULUS一致。
+		   所以，x * 2**PyLong_SHIFT = y + z (mod _PyHASH_MODULUS).
+
            The right-hand side is just the result of rotating the
            _PyHASH_BITS bits of x left by PyLong_SHIFT places; since
            not all _PyHASH_BITS bits of x are 1s, the same is true
            after rotation, so 0 <= y+z < _PyHASH_MODULUS and y + z is
            the reduction of x*2**PyLong_SHIFT modulo
-           _PyHASH_MODULUS. */
+           _PyHASH_MODULUS. 
+		   
+		   右边是将x的_PyHASH_BITS位向左移动PyLong_SHIFT位的结果
+		   由于并非x的所有_PyHASH_BITS位都是1s，移位后也是如此，
+		   所以0 <= y+z < _PyHASH_MODULUS and y + z 是 x*2**PyLong_SHIFT modulo
+		   _PyHASH_MODULUS的减少量
+		   
+		   */
         x = ((x << PyLong_SHIFT) & _PyHASH_MODULUS) |
             (x >> (_PyHASH_BITS - PyLong_SHIFT));
         x += v->ob_digit[i];
@@ -3036,7 +3093,10 @@ long_hash(PyLongObject *v)
 }
 
 
-/* Add the absolute values of two integers. */
+/* 
+Add the absolute values of two integers. 
+将两个整数的绝对值相加
+*/
 
 static PyLongObject *
 x_add(PyLongObject *a, PyLongObject *b)
@@ -3046,7 +3106,10 @@ x_add(PyLongObject *a, PyLongObject *b)
     Py_ssize_t i;
     digit carry = 0;
 
-    /* Ensure a is the larger of the two: */
+    /* 
+	Ensure a is the larger of the two: 
+	确保a是两者中较大的一个
+	*/
     if (size_a < size_b) {
         { PyLongObject *temp = a; a = b; b = temp; }
         { Py_ssize_t size_temp = size_a;
@@ -3070,7 +3133,10 @@ x_add(PyLongObject *a, PyLongObject *b)
     return long_normalize(z);
 }
 
-/* Subtract the absolute values of two integers. */
+/* 
+Subtract the absolute values of two integers. 
+减去两个整数的绝对值。
+*/
 
 static PyLongObject *
 x_sub(PyLongObject *a, PyLongObject *b)
@@ -3081,7 +3147,10 @@ x_sub(PyLongObject *a, PyLongObject *b)
     int sign = 1;
     digit borrow = 0;
 
-    /* Ensure a is the larger of the two: */
+    /* 
+	Ensure a is the larger of the two: 
+	确保a是两者中较大的一个
+	*/
     if (size_a < size_b) {
         sign = -1;
         { PyLongObject *temp = a; a = b; b = temp; }
@@ -3090,7 +3159,10 @@ x_sub(PyLongObject *a, PyLongObject *b)
             size_b = size_temp; }
     }
     else if (size_a == size_b) {
-        /* Find highest digit where a and b differ: */
+        /* 
+		Find highest digit where a and b differ: 
+		找到a和b不同的最大数字
+		*/
         i = size_a;
         while (--i >= 0 && a->ob_digit[i] == b->ob_digit[i])
             ;
@@ -3107,17 +3179,21 @@ x_sub(PyLongObject *a, PyLongObject *b)
         return NULL;
     for (i = 0; i < size_b; ++i) {
         /* The following assumes unsigned arithmetic
-           works module 2**N for some N>PyLong_SHIFT. */
+           works module 2**N for some N>PyLong_SHIFT. 
+		   
+		   以下假设无符号算术在模块2**N中对某些N>PyLong_SHIFT起作用。
+
+		   */
         borrow = a->ob_digit[i] - b->ob_digit[i] - borrow;
         z->ob_digit[i] = borrow & PyLong_MASK;
         borrow >>= PyLong_SHIFT;
-        borrow &= 1; /* Keep only one sign bit */
+        borrow &= 1; /* Keep only one sign bit 只保留一个标志位 */
     }
     for (; i < size_a; ++i) {
         borrow = a->ob_digit[i] - borrow;
         z->ob_digit[i] = borrow & PyLong_MASK;
         borrow >>= PyLong_SHIFT;
-        borrow &= 1; /* Keep only one sign bit */
+        borrow &= 1; /* Keep only one sign bit 只保留一个标志位 */
     }
     assert(borrow == 0);
     if (sign < 0) {
@@ -3143,7 +3219,11 @@ long_add(PyLongObject *a, PyLongObject *b)
                 /* x_add received at least one multiple-digit int,
                    and thus z must be a multiple-digit int.
                    That also means z is not an element of
-                   small_ints, so negating it in-place is safe. */
+                   small_ints, so negating it in-place is safe. 
+				   
+				   x_add至少接收到一个多位数int，因此z必须是一个多位数int。这也意味着z不是小int的元素，因此在适当位置对其求反是安全的。
+                   
+				   */
                 assert(Py_REFCNT(z) == 1);
                 Py_SIZE(z) = -(Py_SIZE(z));
             }
@@ -3191,6 +3271,9 @@ long_sub(PyLongObject *a, PyLongObject *b)
 
 /* Grade school multiplication, ignoring the signs.
  * Returns the absolute value of the product, or NULL if error.
+
+	小学乘法，忽略符号。返回乘积的绝对值，如果有错误，返回NULL。
+
  */
 static PyLongObject *
 x_mul(PyLongObject *a, PyLongObject *b)
@@ -3211,6 +3294,13 @@ x_mul(PyLongObject *a, PyLongObject *b)
          * Gives slightly less than a 2x speedup when a == b,
          * via exploiting that each entry in the multiplication
          * pyramid appears twice (except for the size_a squares).
+
+		 每个HAC的有效平方，算法14.16：
+		 链接http://www.cacr.math.uwaterloo.ca/hac/about/chap14.pdf
+		 当a==b时，加速比略小于2倍
+		 通过利用乘法中的每个条目
+		 棱锥体显示两次（正方形大小除外）
+
          */
         for (i = 0; i < size_a; ++i) {
             twodigits carry;
@@ -3231,6 +3321,7 @@ x_mul(PyLongObject *a, PyLongObject *b)
 
             /* Now f is added in twice in each column of the
              * pyramid it appears.  Same as adding f<<1 once.
+			 现在f在它出现的金字塔的每一列中添加两次。与添加f<<1相同。
              */
             f <<= 1;
             while (pa < paend) {
@@ -3249,7 +3340,7 @@ x_mul(PyLongObject *a, PyLongObject *b)
             assert((carry >> PyLong_SHIFT) == 0);
         }
     }
-    else {      /* a is not the same as b -- gradeschool int mult */
+    else {      /* a is not the same as b -- gradeschool int mult a和b不一样 */
         for (i = 0; i < size_a; ++i) {
             twodigits carry = 0;
             twodigits f = a->ob_digit[i];
@@ -3282,6 +3373,11 @@ x_mul(PyLongObject *a, PyLongObject *b)
    viewing the shift as being by digits.  The sign bit is ignored, and
    the return values are >= 0.
    Returns 0 on success, -1 on failure.
+
+   卡拉祖巴乘法（k_mul）。
+   取一个int“n”和一个整数“size”，表示要拆分的位置，并将其设置为low和high，以使abs（n）=（high<<size）+low，
+   将移位视为按数字进行。符号位被忽略，返回值>=0。成功时返回0，失败时返回1。
+
 */
 static int
 kmul_split(PyLongObject *n,
@@ -3316,6 +3412,9 @@ static PyLongObject *k_lopsided_mul(PyLongObject *a, PyLongObject *b);
 /* Karatsuba multiplication.  Ignores the input signs, and returns the
  * absolute value of the product (or NULL if error).
  * See Knuth Vol. 2 Chapter 4.3.3 (Pp. 294-295).
+
+   卡拉祖巴乘法。忽略输入符号，并返回产品的绝对值（如果错误，则返回NULL）。
+   参见Knuth第2卷第4.3.3章（第294-295页）。
  */
 static PyLongObject *
 k_mul(PyLongObject *a, PyLongObject *b)
@@ -3328,7 +3427,7 @@ k_mul(PyLongObject *a, PyLongObject *b)
     PyLongObject *bl = NULL;
     PyLongObject *ret = NULL;
     PyLongObject *t1, *t2, *t3;
-    Py_ssize_t shift;           /* the number of digits we split off */
+    Py_ssize_t shift;           /* the number of digits we split off 分开的位数 */
     Py_ssize_t i;
 
     /* (ah*X+al)(bh*X+bl) = ah*bh*X*X + (ah*bl + al*bh)*X + al*bl
@@ -3337,10 +3436,18 @@ k_mul(PyLongObject *a, PyLongObject *b)
      *     ah*bh*X*X + (k - ah*bh - al*bl)*X + al*bl
      * By picking X to be a power of 2, "*X" is just shifting, and it's
      * been reduced to 3 multiplies on numbers half the size.
-     */
+     
+	 （ah*X+al）（bh*X+bl）=ah*bh*X*X+（ah*bl+al*bh）*X+al*bl
+      设k=（ah+al）*（bh+bl）=ah*bl+al*bh+ah*bh+al*bl
+      那么原来的产品是 ah*bh*X*X+（k-ah*bh-al*bl）*X+al*bl
+      通过选择X为2的幂，“*X”只是在移动，它被减少到大小一半的数字的3倍。
+      我们希望根据较大的数字进行拆分；使b是最大的。
+	 
+	 */
 
     /* We want to split based on the larger number; fiddle so that b
      * is largest.
+	 我们希望根据较大的数字进行拆分；不停摆弄使得b是最大的。
      */
     if (asize > bsize) {
         t1 = a;
@@ -3352,7 +3459,10 @@ k_mul(PyLongObject *a, PyLongObject *b)
         bsize = i;
     }
 
-    /* Use gradeschool math when either number is too small. */
+    /* 
+	Use gradeschool math when either number is too small. 
+	当任何一个数字太小时，使用gradeschool math
+	*/
     i = a == b ? KARATSUBA_SQUARE_CUTOFF : KARATSUBA_CUTOFF;
     if (asize <= i) {
         if (asize == 0)
@@ -3366,14 +3476,24 @@ k_mul(PyLongObject *a, PyLongObject *b)
      * than "grade school" then.  However, we can still win, by viewing
      * b as a string of "big digits", each of width a->ob_size.  That
      * leads to a sequence of balanced calls to k_mul.
+
+	 如果a比b小，则b上的分裂产生退化
+	 如果ah==0，则Karatsuba的效率可能（甚至要低得多）
+	 然而，我们仍然可以获胜，通过将b视为一串“大数字”，
+	 每一个都是宽度a->ob_大小。
+	 这将导致对k_mul的一系列均衡调用。
+
      */
     if (2 * asize <= bsize)
         return k_lopsided_mul(a, b);
 
-    /* Split a & b into hi & lo pieces. */
+    /* 
+	Split a & b into hi & lo pieces. 
+	将a&b分成高低两部分
+	*/
     shift = bsize >> 1;
     if (kmul_split(a, shift, &ah, &al) < 0) goto fail;
-    assert(Py_SIZE(ah) > 0);            /* the split isn't degenerate */
+    assert(Py_SIZE(ah) > 0);            /* the split isn't degenerate 分裂不是退化的 */
 
     if (a == b) {
         bh = ah;
@@ -3386,20 +3506,41 @@ k_mul(PyLongObject *a, PyLongObject *b)
     /* The plan:
      * 1. Allocate result space (asize + bsize digits:  that's always
      *    enough).
+
+		分配结果空间（asize+bsize数字：这总是足够的）。
+	   
      * 2. Compute ah*bh, and copy into result at 2*shift.
+		
+		计算ah*bh，并在2*shift时复制到结果中。
+
      * 3. Compute al*bl, and copy into result at 0.  Note that this
      *    can't overlap with #2.
+
+		计算al*bl，并在0处复制到结果中。请注意，这不能与#2重叠。
+
      * 4. Subtract al*bl from the result, starting at shift.  This may
      *    underflow (borrow out of the high digit), but we don't care:
      *    we're effectively doing unsigned arithmetic mod
      *    BASE**(sizea + sizeb), and so long as the *final* result fits,
      *    borrows and carries out of the high digit can be ignored.
+
+		从移位开始，从结果中减去al*bl。这可能是下溢（借用高位），
+		但我们不在乎：
+		我们实际上是在做无符号算术mod BASE**（sizea+sizeb），
+		只要*最终*结果合适，借用并执行高位就可以忽略。
+
      * 5. Subtract ah*bh from the result, starting at shift.
+		
+		从移位开始，从结果中减去ah*bh。
+
      * 6. Compute (ah+al)*(bh+bl), and add it into the result starting
      *    at shift.
+
+		计算（ah+al）*（bh+bl），并从班次开始将其添加到结果中。
+
      */
 
-    /* 1. Allocate result space. */
+    /* 1. Allocate result space. 分配结果空间 */
     ret = _PyLong_New(asize + bsize);
     if (ret == NULL) goto fail;
 #ifdef Py_DEBUG
@@ -3407,44 +3548,50 @@ k_mul(PyLongObject *a, PyLongObject *b)
     memset(ret->ob_digit, 0xDF, Py_SIZE(ret) * sizeof(digit));
 #endif
 
-    /* 2. t1 <- ah*bh, and copy into high digits of result. */
+    /* 2. t1 <- ah*bh, and copy into high digits of result. 
+	t1<-ah*bh，并复制到结果的高位*/
     if ((t1 = k_mul(ah, bh)) == NULL) goto fail;
     assert(Py_SIZE(t1) >= 0);
     assert(2*shift + Py_SIZE(t1) <= Py_SIZE(ret));
     memcpy(ret->ob_digit + 2*shift, t1->ob_digit,
            Py_SIZE(t1) * sizeof(digit));
 
-    /* Zero-out the digits higher than the ah*bh copy. */
+    /* Zero-out the digits higher than the ah*bh copy. 
+	将高于ah*bh副本的数字归零*/
     i = Py_SIZE(ret) - 2*shift - Py_SIZE(t1);
     if (i)
         memset(ret->ob_digit + 2*shift + Py_SIZE(t1), 0,
                i * sizeof(digit));
 
-    /* 3. t2 <- al*bl, and copy into the low digits. */
+    /* 3. t2 <- al*bl, and copy into the low digits. 
+	t2<-al*bl，并复制到低位*/
     if ((t2 = k_mul(al, bl)) == NULL) {
         Py_DECREF(t1);
         goto fail;
     }
     assert(Py_SIZE(t2) >= 0);
-    assert(Py_SIZE(t2) <= 2*shift); /* no overlap with high digits */
+    assert(Py_SIZE(t2) <= 2*shift); /* no overlap with high digits 不与高位重叠 */
     memcpy(ret->ob_digit, t2->ob_digit, Py_SIZE(t2) * sizeof(digit));
 
-    /* Zero out remaining digits. */
-    i = 2*shift - Py_SIZE(t2);          /* number of uninitialized digits */
+    /* Zero out remaining digits. 
+	将剩余数字归零*/
+    i = 2*shift - Py_SIZE(t2);          /* number of uninitialized digits 未初始化的位数 */
     if (i)
         memset(ret->ob_digit + Py_SIZE(t2), 0, i * sizeof(digit));
 
     /* 4 & 5. Subtract ah*bh (t1) and al*bl (t2).  We do al*bl first
      * because it's fresher in cache.
+	 减去ah*bh（t1）和al*bl（t2）。我们先做al*bl，因为它在缓存中更新鲜
      */
-    i = Py_SIZE(ret) - shift;  /* # digits after shift */
+    i = Py_SIZE(ret) - shift;  /* # digits after shift 移位后的数字 */
     (void)v_isub(ret->ob_digit + shift, i, t2->ob_digit, Py_SIZE(t2));
     Py_DECREF(t2);
 
     (void)v_isub(ret->ob_digit + shift, i, t1->ob_digit, Py_SIZE(t1));
     Py_DECREF(t1);
 
-    /* 6. t3 <- (ah+al)(bh+bl), and add into result. */
+    /* 6. t3 <- (ah+al)(bh+bl), and add into result. 
+	t3<-（ah+al）（bh+bl），并添加到结果中。*/
     if ((t1 = x_add(ah, al)) == NULL) goto fail;
     Py_DECREF(ah);
     Py_DECREF(al);
@@ -3470,6 +3617,10 @@ k_mul(PyLongObject *a, PyLongObject *b)
 
     /* Add t3.  It's not obvious why we can't run out of room here.
      * See the (*) comment after this function.
+
+	 加上t3。不清楚为什么我们不能把这里的空间用光。
+	 请参阅此函数后面的（*）注释。
+
      */
     (void)v_iadd(ret->ob_digit + shift, i, t3->ob_digit, Py_SIZE(t3));
     Py_DECREF(t3);
@@ -3486,32 +3637,46 @@ k_mul(PyLongObject *a, PyLongObject *b)
 }
 
 /* (*) Why adding t3 can't "run out of room" above.
-
+为什么添加t3不能在上面“用完空间”。
 Let f(x) mean the floor of x and c(x) mean the ceiling of x.  Some facts
 to start with:
-
+设f（x）表示x的地板，c（x）表示x的天花板。一些事实
+首先：
 1. For any integer i, i = c(i/2) + f(i/2).  In particular,
    bsize = c(bsize/2) + f(bsize/2).
+   对于任何整数i，i=c（i/2）+f（i/2）。特别地，
+   b尺寸=c（b尺寸/2）+f（b尺寸/2）。
 2. shift = f(bsize/2)
 3. asize <= bsize
 4. Since we call k_lopsided_mul if asize*2 <= bsize, asize*2 > bsize in this
    routine, so asize > bsize/2 >= f(bsize/2) in this routine.
-
+   因为在这个例程中，如果asize*2<=bsize，asize*2>bsize，我们称之为k_lopsided\u mul，
+   所以在这个例程中asize>bsize/2>=f（bsize/2）。
 We allocated asize + bsize result digits, and add t3 into them at an offset
 of shift.  This leaves asize+bsize-shift allocated digit positions for t3
 to fit into, = (by #1 and #2) asize + f(bsize/2) + c(bsize/2) - f(bsize/2) =
 asize + c(bsize/2) available digit positions.
+我们分配了asize+bsize结果数字，并将t3以偏移量添加到其中
+轮班时间。这将为t3保留asize+BSSIZE移位分配的数字位置
+要适应，=（按1和2）asize+f（b大小/2）+c（b大小/2）-f（b大小/2）=
+asize+c（bsize/2）可用数字位置。
 
 bh has c(bsize/2) digits, and bl at most f(size/2) digits.  So bh+hl has
 at most c(bsize/2) digits + 1 bit.
+bh有c（大小/2）位，bl最多有f（大小/2）位。那么bh+hl已经
+最多c（b大小/2）位+1位。
 
 If asize == bsize, ah has c(bsize/2) digits, else ah has at most f(bsize/2)
 digits, and al has at most f(bsize/2) digits in any case.  So ah+al has at
 most (asize == bsize ? c(bsize/2) : f(bsize/2)) digits + 1 bit.
+如果asize==bsize，ah有c（bsize/2）位，否则ah最多有f（bsize/2）
+数字，并且在任何情况下，al最多有f（b大小/2）个数字。因此，ah+al在
+most（asize==bsize？c（bsize/2）：f（bsize/2））位数+1位。
+
 
 The product (ah+al)*(bh+bl) therefore has at most
-
-    c(bsize/2) + (asize == bsize ? c(bsize/2) : f(bsize/2)) digits + 2 bits
+因此，产品（ah+al）*（bh+bl）最多具有:
+	c(bsize/2) + (asize == bsize ? c(bsize/2) : f(bsize/2)) digits + 2 bits
 
 and we have asize + c(bsize/2) available digit positions.  We need to show
 this is always enough.  An instance of c(bsize/2) cancels out in both, so
@@ -3524,10 +3689,23 @@ asize == bsize, then we're asking whether bsize digits is enough to hold
 c(bsize/2) digits + 2 bits, or equivalently (by #1) whether f(bsize/2) digits
 is enough to hold 2 bits.  This is so if bsize >= 2, which holds because
 bsize >= KARATSUBA_CUTOFF >= 2.
+我们有asize+c（bsize/2）可用的数字位置。我们需要展示
+这总是足够的。c（bsize/2）的一个实例在这两种情况下都会取消，因此
+问题归结到，亚洲数字是否足以容纳
+（asize==bsize？c（bsize/2）：f（bsize/2））位+2位。如果asize<bsize，
+然后我们询问asize digits>=f（bsize/2）digits+2位。由#4，
+asize至少是f（bsize/2）+1个数字，因此这反过来又减少到是否为1
+数字足以容纳2位。这是因为PyLong_SHIFT=15>=2。如果
+asize==bsize，然后我们询问bsize数字是否足以容纳
+c（bsize/2）位+2位，或与f（bsize/2）位等效（按#1）
+足够容纳2位。如果bsize>=2，情况就是这样，因为
+b尺寸>=karatusuba\u截止值>=2。
 
 Note that since there's always enough room for (ah+al)*(bh+bl), and that's
 clearly >= each of ah*bh and al*bl, there's always enough room to subtract
 ah*bh and al*bl too.
+注意，因为总是有足够的空间来容纳（ah+al）*（bh+bl），
+这显然是>=每个ah*bh和al*bl，所以总是有足够的空间来减去ah*bh和al*bl。
 */
 
 /* b has at least twice the digits of a, and a is big enough that Karatsuba
@@ -3537,6 +3715,11 @@ ah*bh and al*bl too.
  * also cache-friendly (we compute one double-width slice of the result
  * at a time, then move on, never backtracking except for the helpful
  * single-width slice overlap between successive partial sums).
+ b的数字至少是a的两倍，而a的大小足以让Karatsuba在输入大小平衡的情况下获得回报。
+ 将b视为一系列切片，每个切片都有一个->ob_大小的数字，
+ 然后将切片乘以a，一次一个。这使得k_mul平衡输入可以使用，
+ 而且缓存友好（我们一次计算结果的一个双倍宽度切片，
+ 然后继续，除了连续部分和之间有用的单宽度切片重叠外，从不回溯）。
  */
 static PyLongObject *
 k_lopsided_mul(PyLongObject *a, PyLongObject *b)
@@ -3550,13 +3733,13 @@ k_lopsided_mul(PyLongObject *a, PyLongObject *b)
     assert(asize > KARATSUBA_CUTOFF);
     assert(2 * asize <= bsize);
 
-    /* Allocate result space, and zero it out. */
+    /* 分配结果空间，并将其归零。 */
     ret = _PyLong_New(asize + bsize);
     if (ret == NULL)
         return NULL;
     memset(ret->ob_digit, 0, Py_SIZE(ret) * sizeof(digit));
 
-    /* Successive slices of b are copied into bslice. */
+    /* 将b的连续切片复制到b切片中。 */
     bslice = _PyLong_New(asize);
     if (bslice == NULL)
         goto fail;
@@ -3566,7 +3749,7 @@ k_lopsided_mul(PyLongObject *a, PyLongObject *b)
         PyLongObject *product;
         const Py_ssize_t nbtouse = Py_MIN(bsize, asize);
 
-        /* Multiply the next slice of b by a. */
+        /* 将b的下一片乘以a */
         memcpy(bslice->ob_digit, b->ob_digit + nbdone,
                nbtouse * sizeof(digit));
         Py_SIZE(bslice) = nbtouse;
@@ -3574,7 +3757,7 @@ k_lopsided_mul(PyLongObject *a, PyLongObject *b)
         if (product == NULL)
             goto fail;
 
-        /* Add into result. */
+        /* 添加到结果中 */
         (void)v_iadd(ret->ob_digit + nbdone, Py_SIZE(ret) - nbdone,
                      product->ob_digit, Py_SIZE(product));
         Py_DECREF(product);
@@ -3599,14 +3782,14 @@ long_mul(PyLongObject *a, PyLongObject *b)
 
     CHECK_BINOP(a, b);
 
-    /* fast path for single-digit multiplication */
+    /* 一位数乘法的快速路径 */
     if (Py_ABS(Py_SIZE(a)) <= 1 && Py_ABS(Py_SIZE(b)) <= 1) {
         stwodigits v = (stwodigits)(MEDIUM_VALUE(a)) * MEDIUM_VALUE(b);
         return PyLong_FromLongLong((long long)v);
     }
 
     z = k_mul(a, b);
-    /* Negate if exactly one of the inputs is negative. */
+    /* 如果恰好有一个输入为负，则为否定。 */
     if (((Py_SIZE(a) ^ Py_SIZE(b)) < 0) && z) {
         _PyLong_Negate(&z);
         if (z == NULL)
@@ -3615,7 +3798,9 @@ long_mul(PyLongObject *a, PyLongObject *b)
     return (PyObject *)z;
 }
 
-/* Fast modulo division for single-digit longs. */
+/* Fast modulo division for single-digit longs. 
+一位数长的快速模除法。
+*/
 static PyObject *
 fast_mod(PyLongObject *a, PyLongObject *b)
 {
@@ -3631,14 +3816,16 @@ fast_mod(PyLongObject *a, PyLongObject *b)
         mod = left % right;
     }
     else {
-        /* Either 'a' or 'b' is negative. */
+        /* “a”或“b”都是负数。 */
         mod = right - 1 - (left - 1) % right;
     }
 
     return PyLong_FromLong(mod * (sdigit)Py_SIZE(b));
 }
 
-/* Fast floor division for single-digit longs. */
+/* Fast floor division for single-digit longs. 
+快速地板分割为一位数长。
+*/
 static PyObject *
 fast_floor_div(PyLongObject *a, PyLongObject *b)
 {
@@ -3667,21 +3854,35 @@ fast_floor_div(PyLongObject *a, PyLongObject *b)
    |a| by |b|, with the sign of a.  This is also expressed
    as a - b*trunc(a/b), if trunc truncates towards zero.
    Some examples:
-     a           b      a rem b         a mod b
-     13          10      3               3
-    -13          10     -3               7
-     13         -10      3              -7
-    -13         -10     -3              -3
+   /和%运算符现在是根据divmod（）定义的。
+   表达式a mod b的值为a-b*floor（a/b）。
+   long_divrem函数给出除法后的余数
+   |a | by | b |，带有a的符号。这一点也表达了出来
+   作为-b*trunc（a/b），如果trunc向零截断。
+
+一些例子：
+	 a           b      a rem b         a mod b
+	 13          10      3               3
+	-13          10     -3               7
+	 13         -10      3              -7
+	-13         -10     -3              -3
    So, to get from rem to mod, we have to add b if a and b
    have different signs.  We then subtract one from the 'div'
-   part of the outcome to keep the invariant intact. */
+   part of the outcome to keep the invariant intact.
+   所以，从rem到mod，如果a和b有不同的符号，我们必须加上b。
+   然后我们从结果的“div”部分减去一，以保持不变量不变。
+   */
 
-/* Compute
- *     *pdiv, *pmod = divmod(v, w)
- * NULL can be passed for pdiv or pmod, in which case that part of
- * the result is simply thrown away.  The caller owns a reference to
- * each of these it requests (does not pass NULL for).
- */
+   /* Compute
+	*     *pdiv, *pmod = divmod(v, w)
+	* NULL can be passed for pdiv or pmod, in which case that part of
+	* the result is simply thrown away.  The caller owns a reference to
+	* each of these it requests (does not pass NULL for).
+	计算
+	pdiv，*pmod=divmod（v，w）
+	可以为pdiv或pmod传递NULL，在这种情况下，只需丢弃部分结果。
+	调用方拥有对每个请求的引用（不传递NULL）。
+	*/
 static int
 l_divmod(PyLongObject *v, PyLongObject *w,
          PyLongObject **pdiv, PyLongObject **pmod)
@@ -3689,7 +3890,7 @@ l_divmod(PyLongObject *v, PyLongObject *w,
     PyLongObject *div, *mod;
 
     if (Py_ABS(Py_SIZE(v)) == 1 && Py_ABS(Py_SIZE(w)) == 1) {
-        /* Fast path for single-digit longs */
+        /* 一位数长码的快速路径 */
         div = NULL;
         if (pdiv != NULL) {
             div = (PyLongObject *)fast_floor_div(v, w);
@@ -3707,7 +3908,9 @@ l_divmod(PyLongObject *v, PyLongObject *w,
         }
         if (pdiv != NULL) {
             /* We only want to set `*pdiv` when `*pmod` is
-               set successfully. */
+               set successfully. 
+			   我们只想在成功设置`*pmod`时设置`*pdiv`。
+			   */
             *pdiv = div;
         }
         return 0;
@@ -3762,7 +3965,9 @@ long_div(PyObject *a, PyObject *b)
     return (PyObject *)div;
 }
 
-/* PyLong/PyLong -> float, with correctly rounded result. */
+/* PyLong/PyLong -> float, with correctly rounded result. 
+PyLong/PyLong->float，具有正确的四舍五入结果。
+*/
 
 #define MANT_DIG_DIGITS (DBL_MANT_DIG / PyLong_SHIFT)
 #define MANT_DIG_BITS (DBL_MANT_DIG % PyLong_SHIFT)
@@ -3780,94 +3985,159 @@ long_true_divide(PyObject *v, PyObject *w)
     a = (PyLongObject *)v;
     b = (PyLongObject *)w;
 
-    /*
-       Method in a nutshell:
+	/*
+	   Method in a nutshell:
 
-         0. reduce to case a, b > 0; filter out obvious underflow/overflow
-         1. choose a suitable integer 'shift'
-         2. use integer arithmetic to compute x = floor(2**-shift*a/b)
-         3. adjust x for correct rounding
-         4. convert x to a double dx with the same value
-         5. return ldexp(dx, shift).
+		 0. reduce to case a, b > 0; filter out obvious underflow/overflow
+		 1. choose a suitable integer 'shift'
+		 2. use integer arithmetic to compute x = floor(2**-shift*a/b)
+		 3. adjust x for correct rounding
+		 4. convert x to a double dx with the same value
+		 5. return ldexp(dx, shift).
+		 方法简而言之：
+		 0减少到情况a，b>0；过滤掉明显的底流/溢流
+		 1.选择合适的整数“shift”
+		 2.使用整数算法计算x=楼层（2**-shift*a/b）
+		 3.调整x以获得正确的四舍五入
+		 4.将x转换为具有相同值的双dx
+		 5.返回ldexp（dx，移位）。
 
-       In more detail:
 
-       0. For any a, a/0 raises ZeroDivisionError; for nonzero b, 0/b
-       returns either 0.0 or -0.0, depending on the sign of b.  For a and
-       b both nonzero, ignore signs of a and b, and add the sign back in
-       at the end.  Now write a_bits and b_bits for the bit lengths of a
-       and b respectively (that is, a_bits = 1 + floor(log_2(a)); likewise
-       for b).  Then
+	   In more detail:
 
-          2**(a_bits - b_bits - 1) < a/b < 2**(a_bits - b_bits + 1).
+	   0. For any a, a/0 raises ZeroDivisionError; for nonzero b, 0/b
+	   returns either 0.0 or -0.0, depending on the sign of b.  For a and
+	   b both nonzero, ignore signs of a and b, and add the sign back in
+	   at the end.  Now write a_bits and b_bits for the bit lengths of a
+	   and b respectively (that is, a_bits = 1 + floor(log_2(a)); likewise
+	   for b).
+	   更详细地说：
+	   0对于任何一个a，a/0都会引发零错误；对于非零b，0/b
+	   根据b的符号返回0.0或-0.0。一段时间
+	   b都不为零，忽略a和b的符号，然后将符号添加回
+	   最后。现在为a的位长度写入a_位和b_位
+	   和b（即，a_比特=1+楼层（log_2（a））；同样对于b）。
+	   Then
 
-       So if a_bits - b_bits > DBL_MAX_EXP then a/b > 2**DBL_MAX_EXP and
-       so overflows.  Similarly, if a_bits - b_bits < DBL_MIN_EXP -
-       DBL_MANT_DIG - 1 then a/b underflows to 0.  With these cases out of
-       the way, we can assume that
+		  2**(a_bits - b_bits - 1) < a/b < 2**(a_bits - b_bits + 1).
 
-          DBL_MIN_EXP - DBL_MANT_DIG - 1 <= a_bits - b_bits <= DBL_MAX_EXP.
+	   So if a_bits - b_bits > DBL_MAX_EXP then a/b > 2**DBL_MAX_EXP and
+	   so overflows.  Similarly, if a_bits - b_bits < DBL_MIN_EXP -
+	   DBL_MANT_DIG - 1 then a/b underflows to 0.  With these cases out of
+	   the way, we can assume that
+	   因此，如果a_bits-b_bits>DBL_MAX_EXP，那么a/b>2**DBL_MAX_EXP和
+	   如此泛滥。类似地，如果a_位-b_位<DBL_最小值-
+	   DBL_MANT_DIG-1，则a/b下溢为0。这些箱子已经卖完了
+	   顺便说一下，我们可以假设
 
-       1. The integer 'shift' is chosen so that x has the right number of
-       bits for a double, plus two or three extra bits that will be used
-       in the rounding decisions.  Writing a_bits and b_bits for the
-       number of significant bits in a and b respectively, a
-       straightforward formula for shift is:
 
-          shift = a_bits - b_bits - DBL_MANT_DIG - 2
+		  DBL_MIN_EXP - DBL_MANT_DIG - 1 <= a_bits - b_bits <= DBL_MAX_EXP.
 
-       This is fine in the usual case, but if a/b is smaller than the
-       smallest normal float then it can lead to double rounding on an
-       IEEE 754 platform, giving incorrectly rounded results.  So we
-       adjust the formula slightly.  The actual formula used is:
+	   1. The integer 'shift' is chosen so that x has the right number of
+	   bits for a double, plus two or three extra bits that will be used
+	   in the rounding decisions.  Writing a_bits and b_bits for the
+	   number of significant bits in a and b respectively, a
+	   straightforward formula for shift is:
+	   1.选择整数“shift”，以便x具有正确的
+	   双精度位，加上将使用的两个或三个额外位
+	   在四舍五入的决定中。将a_位和b_位写入
+	   a和b中的有效位数，a
+	   转换的简单公式是：
 
-           shift = MAX(a_bits - b_bits, DBL_MIN_EXP) - DBL_MANT_DIG - 2
 
-       2. The quantity x is computed by first shifting a (left -shift bits
-       if shift <= 0, right shift bits if shift > 0) and then dividing by
-       b.  For both the shift and the division, we keep track of whether
-       the result is inexact, in a flag 'inexact'; this information is
-       needed at the rounding stage.
+		  shift = a_bits - b_bits - DBL_MANT_DIG - 2
 
-       With the choice of shift above, together with our assumption that
-       a_bits - b_bits >= DBL_MIN_EXP - DBL_MANT_DIG - 1, it follows
-       that x >= 1.
+	   This is fine in the usual case, but if a/b is smaller than the
+	   smallest normal float then it can lead to double rounding on an
+	   IEEE 754 platform, giving incorrectly rounded results.  So we
+	   adjust the formula slightly.  The actual formula used is:
+	   这在通常情况下是可以的，但是如果a/b小于
+	   最小的正常浮动，然后它可以导致在
+	   IEEE 754平台，给出了不正确的四舍五入结果。所以我们
+	   稍微调整一下配方。实际使用的公式为：
 
-       3. Now x * 2**shift <= a/b < (x+1) * 2**shift.  We want to replace
-       this with an exactly representable float of the form
 
-          round(x/2**extra_bits) * 2**(extra_bits+shift).
+		   shift = MAX(a_bits - b_bits, DBL_MIN_EXP) - DBL_MANT_DIG - 2
 
-       For float representability, we need x/2**extra_bits <
-       2**DBL_MANT_DIG and extra_bits + shift >= DBL_MIN_EXP -
-       DBL_MANT_DIG.  This translates to the condition:
+	   2. The quantity x is computed by first shifting a (left -shift bits
+	   if shift <= 0, right shift bits if shift > 0) and then dividing by
+	   b.  For both the shift and the division, we keep track of whether
+	   the result is inexact, in a flag 'inexact'; this information is
+	   needed at the rounding stage.
+	   2.通过第一次移位a（左移位位）计算数量x
+	   如果移位<=0，则右移位（如果移位>0），然后除以
+	   B对于班次和部门，我们都会跟踪
+	   结果是不精确的，在一个“不精确”的标志中；这个信息是在取整阶段需要。
 
-          extra_bits >= MAX(x_bits, DBL_MIN_EXP - shift) - DBL_MANT_DIG
 
-       To round, we just modify the bottom digit of x in-place; this can
-       end up giving a digit with value > PyLONG_MASK, but that's not a
-       problem since digits can hold values up to 2*PyLONG_MASK+1.
+	   With the choice of shift above, together with our assumption that
+	   根据上述移位的选择，以及我们的假设:
+	   a_bits - b_bits >= DBL_MIN_EXP - DBL_MANT_DIG - 1, it follows
+	   that x >= 1.
 
-       With the original choices for shift above, extra_bits will always
-       be 2 or 3.  Then rounding under the round-half-to-even rule, we
-       round up iff the most significant of the extra bits is 1, and
-       either: (a) the computation of x in step 2 had an inexact result,
-       or (b) at least one other of the extra bits is 1, or (c) the least
-       significant bit of x (above those to be rounded) is 1.
+	   3. Now x * 2**shift <= a/b < (x+1) * 2**shift.  We want to replace
+	   this with an exactly representable float of the form
+	   3.现在x*2**班次<=a/b<（x+1）*2**班次。我们想替换
+	   这是一个完全可表示的形式浮动
 
-       4. Conversion to a double is straightforward; all floating-point
-       operations involved in the conversion are exact, so there's no
-       danger of rounding errors.
 
-       5. Use ldexp(x, shift) to compute x*2**shift, the final result.
-       The result will always be exactly representable as a double, except
-       in the case that it overflows.  To avoid dependence on the exact
-       behaviour of ldexp on overflow, we check for overflow before
-       applying ldexp.  The result of ldexp is adjusted for sign before
-       returning.
-    */
+		  round(x/2**extra_bits) * 2**(extra_bits+shift).
 
-    /* Reduce to case where a and b are both positive. */
+	   For float representability, we need x/2**extra_bits <
+	   2**DBL_MANT_DIG and extra_bits + shift >= DBL_MIN_EXP -
+	   DBL_MANT_DIG.  This translates to the condition:
+	   对于浮点表示性，我们需要x/2**额外的\u位<
+	   2**DBL\u MANT\u DIG和额外位+移位>=DBL\u MIN\u EXP-
+	   DBL_MANT_DIG。这转化为以下情况：
+
+
+		  extra_bits >= MAX(x_bits, DBL_MIN_EXP - shift) - DBL_MANT_DIG
+
+	   To round, we just modify the bottom digit of x in-place; this can
+	   end up giving a digit with value > PyLONG_MASK, but that's not a
+	   problem since digits can hold values up to 2*PyLONG_MASK+1.
+	   为了取整，我们只需在适当的位置修改x的底部数字；这个可以
+	   最后给出一个值>PyLONG_掩码的数字，但这不是一个
+	   问题，因为数字最多可以容纳2*PyLONG_掩码+1的值。
+
+
+	   With the original choices for shift above, extra_bits will always
+	   be 2 or 3.  Then rounding under the round-half-to-even rule, we
+	   round up iff the most significant of the extra bits is 1, and
+	   either: (a) the computation of x in step 2 had an inexact result,
+	   or (b) at least one other of the extra bits is 1, or (c) the least
+	   significant bit of x (above those to be rounded) is 1.
+	   对于以上移位的原始选择，额外的_位将始终保持不变
+	   2或3岁。然后在圆的一半下进行四舍五入以使规则相等，我们
+	   向上取整iff额外位中的最高有效位为1，并且
+	   要么：（a）第2步中x的计算结果不准确，
+	   或者（b）额外比特中的至少一个是1，或者（c）至少一个是1
+	   x的有效位（在要舍入的位之上）为1。
+
+
+	   4. Conversion to a double is straightforward; all floating-point
+	   operations involved in the conversion are exact, so there's no
+	   danger of rounding errors.
+	   4.转换为双精度是很简单的；全浮点
+	   转换中涉及的操作是精确的，因此没有四舍五入错误的危险。
+
+
+	   5. Use ldexp(x, shift) to compute x*2**shift, the final result.
+	   The result will always be exactly representable as a double, except
+	   in the case that it overflows.  To avoid dependence on the exact
+	   behaviour of ldexp on overflow, we check for overflow before
+	   applying ldexp.  The result of ldexp is adjusted for sign before
+	   returning.
+	   5.使用ldexp（x，shift）计算x*2**shift，即最终结果。
+	   结果总是可以精确地表示为double，除了
+	   在它溢出的情况下。避免依赖精确的
+	   ldexp在溢出时的行为，我们在
+	   应用ldexp。ldexp的结果在之前进行了符号调整返回。
+	*/
+
+	/* Reduce to case where a and b are both positive.
+	减少到a和b都为正的情况
+	*/
     a_size = Py_ABS(Py_SIZE(a));
     b_size = Py_ABS(Py_SIZE(b));
     negate = (Py_SIZE(a) < 0) ^ (Py_SIZE(b) < 0);
@@ -3879,10 +4149,13 @@ long_true_divide(PyObject *v, PyObject *w)
     if (a_size == 0)
         goto underflow_or_zero;
 
-    /* Fast path for a and b small (exactly representable in a double).
-       Relies on floating-point division being correctly rounded; results
-       may be subject to double rounding on x86 machines that operate with
-       the x87 FPU set to 64-bit precision. */
+	/* Fast path for a and b small (exactly representable in a double).
+	   Relies on floating-point division being correctly rounded; results
+	   may be subject to double rounding on x86 machines that operate with
+	   the x87 FPU set to 64-bit precision.
+	   a和b小的快速路径（可精确表示为双精度）。
+	   依赖于浮点除法被正确舍入；在使用x87 FPU设置为64位精度。
+	   */
     a_is_small = a_size <= MANT_DIG_DIGITS ||
         (a_size == MANT_DIG_DIGITS+1 &&
          a->ob_digit[MANT_DIG_DIGITS] >> MANT_DIG_BITS == 0);
@@ -3901,7 +4174,9 @@ long_true_divide(PyObject *v, PyObject *w)
         goto success;
     }
 
-    /* Catch obvious cases of underflow and overflow */
+	/* Catch obvious cases of underflow and overflow
+	捕捉明显的下溢和溢流情况
+	*/
     diff = a_size - b_size;
     if (diff > PY_SSIZE_T_MAX/PyLong_SHIFT - 1)
         /* Extreme overflow */
@@ -3929,9 +4204,13 @@ long_true_divide(PyObject *v, PyObject *w)
         digit rem;
         /* x = a << -shift */
         if (a_size >= PY_SSIZE_T_MAX - 1 - shift_digits) {
-            /* In practice, it's probably impossible to end up
-               here.  Both a and b would have to be enormous,
-               using close to SIZE_T_MAX bytes of memory each. */
+			/* In practice, it's probably impossible to end up
+			   here.  Both a and b would have to be enormous,
+			   using close to SIZE_T_MAX bytes of memory each.
+			   在实践中，可能是不可能结束的
+			   在这里a和b都必须是巨大的，
+			   使用接近大小的最大内存字节。
+			   */
             PyErr_SetString(PyExc_OverflowError,
                             "intermediate overflow during division");
             goto error;
@@ -3955,7 +4234,9 @@ long_true_divide(PyObject *v, PyObject *w)
             goto error;
         rem = v_rshift(x->ob_digit, a->ob_digit + shift_digits,
                        a_size - shift_digits, shift % PyLong_SHIFT);
-        /* set inexact if any of the bits shifted out is nonzero */
+		/* set inexact if any of the bits shifted out is nonzero
+		如果移出的任何位为非零，则设置不精确
+		*/
         if (rem)
             inexact = 1;
         while (!inexact && shift_digits > 0)
@@ -3965,8 +4246,11 @@ long_true_divide(PyObject *v, PyObject *w)
     long_normalize(x);
     x_size = Py_SIZE(x);
 
-    /* x //= b. If the remainder is nonzero, set inexact.  We own the only
-       reference to x, so it's safe to modify it in-place. */
+	/* x //= b. If the remainder is nonzero, set inexact.  We own the only
+	   reference to x, so it's safe to modify it in-place.
+	   x//=b。如果余数不为零，则设置为不精确。
+	   我们拥有对x的唯一引用，因此可以安全地修改它。
+	   */
     if (b_size == 1) {
         digit rem = inplace_divrem1(x->ob_digit, x->ob_digit, x_size,
                               b->ob_digit[0]);
@@ -4075,9 +4359,11 @@ long_pow(PyObject *v, PyObject *w, PyObject *x)
     Py_ssize_t i, j, k;             /* counters */
     PyLongObject *temp = NULL;
 
-    /* 5-ary values.  If the exponent is large enough, table is
-     * precomputed so that table[i] == a**i % c for i in range(32).
-     */
+	/* 5-ary values.  If the exponent is large enough, table is
+	 * precomputed so that table[i] == a**i % c for i in range(32).
+	   如果指数足够大，则对表进行预计算
+	   table[i] == a**i % c for i in range(32)
+	 */
     PyLongObject *table[32] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
                                0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 
@@ -4104,9 +4390,12 @@ long_pow(PyObject *v, PyObject *w, PyObject *x)
             goto Error;
         }
         else {
-            /* else return a float.  This works because we know
-               that this calls float_pow() which converts its
-               arguments to double. */
+			/* else return a float.  This works because we know
+			   that this calls float_pow() which converts its
+			   arguments to double.
+			   否则返回一个float。这是因为我们知道它调用float_pow（），
+			   将其参数转换为double。
+			   */
             Py_DECREF(a);
             Py_DECREF(b);
             return PyFloat_Type.tp_as_number->nb_power(v, w, x);
@@ -4145,15 +4434,25 @@ long_pow(PyObject *v, PyObject *w, PyObject *x)
             goto Done;
         }
 
-        /* Reduce base by modulus in some cases:
-           1. If base < 0.  Forcing the base non-negative makes things easier.
-           2. If base is obviously larger than the modulus.  The "small
-              exponent" case later can multiply directly by base repeatedly,
-              while the "large exponent" case multiplies directly by base 31
-              times.  It can be unboundedly faster to multiply by
-              base % modulus instead.
-           We could _always_ do this reduction, but l_divmod() isn't cheap,
-           so we only do it when it buys something. */
+		/* Reduce base by modulus in some cases:
+		   1. If base < 0.  Forcing the base non-negative makes things easier.
+		   2. If base is obviously larger than the modulus.  The "small
+			  exponent" case later can multiply directly by base repeatedly,
+			  while the "large exponent" case multiplies directly by base 31
+			  times.  It can be unboundedly faster to multiply by
+			  base % modulus instead.
+		   We could _always_ do this reduction, but l_divmod() isn't cheap,
+		   so we only do it when it buys something.
+		   在某些情况下，通过模量降低基底：
+		   1.如果基值<0。强制基础为非负会使事情变得更容易。
+		   2.如果基底明显大于模量。“小
+		   “指数”的情况下，可以直接乘以基数重复，
+		   而“大指数”情况直接乘以基数31
+		   时代。它可以无限快地乘以
+		   改为基础%模量。
+		   我们可以一直这样做，但l_divmod（）并不便宜，
+		   所以我们只在它买东西的时候才这么做。
+		   */
         if (Py_SIZE(a) < 0 || Py_SIZE(a) > Py_SIZE(c)) {
             if (l_divmod(a, c, NULL, &temp) < 0)
                 goto Error;
@@ -4163,16 +4462,20 @@ long_pow(PyObject *v, PyObject *w, PyObject *x)
         }
     }
 
-    /* At this point a, b, and c are guaranteed non-negative UNLESS
-       c is NULL, in which case a may be negative. */
+	/* At this point a, b, and c are guaranteed non-negative UNLESS
+	   c is NULL, in which case a may be negative.
+	   此时，a、b和c保证为非负，除非c为空，在这种情况下，a可能为负。
+	   */
 
     z = (PyLongObject *)PyLong_FromLong(1L);
     if (z == NULL)
         goto Error;
 
-    /* Perform a modular reduction, X = X % c, but leave X alone if c
-     * is NULL.
-     */
+
+	/* Perform a modular reduction, X = X % c, but leave X alone if c
+	 * is NULL.
+	 执行模块化缩减，X=X%c，但如果c为NULL，则不使用X。
+	 */
 #define REDUCE(X)                                       \
     do {                                                \
         if (c != NULL) {                                \
@@ -4184,8 +4487,11 @@ long_pow(PyObject *v, PyObject *w, PyObject *x)
         }                                               \
     } while(0)
 
-    /* Multiply two values, then reduce the result:
-       result = X*Y % c.  If c is NULL, skip the mod. */
+	 /* Multiply two values, then reduce the result:
+		result = X*Y % c.  If c is NULL, skip the mod.
+		将两个值相乘，然后减少结果：结果=X*Y%c。
+		如果c为空，则跳过mod
+		*/
 #define MULT(X, Y, result)                      \
     do {                                        \
         temp = (PyLongObject *)long_mul(X, Y);  \
@@ -4433,8 +4739,10 @@ long_lshift(PyObject *v, PyObject *w)
 
 /* Compute two's complement of digit vector a[0:m], writing result to
    z[0:m].  The digit vector a need not be normalized, but should not
-   be entirely zero.  a and z may point to the same digit vector. */
-
+   be entirely zero.  a and z may point to the same digit vector.
+   计算数字向量a[0:m]的两个补码，将结果写入z[0:m]。
+   数字向量a不需要规格化，但不应完全为零。a和z可能指向同一个数字向量。
+   */
 static void
 v_complement(digit *z, digit *a, Py_ssize_t m)
 {
@@ -4459,12 +4767,17 @@ long_bitwise(PyLongObject *a,
     Py_ssize_t size_a, size_b, size_z, i;
     PyLongObject *z;
 
-    /* Bitwise operations for negative numbers operate as though
-       on a two's complement representation.  So convert arguments
-       from sign-magnitude to two's complement, and convert the
-       result back to sign-magnitude at the end. */
+	/* Bitwise operations for negative numbers operate as though
+	   on a two's complement representation.  So convert arguments
+	   from sign-magnitude to two's complement, and convert the
+	   result back to sign-magnitude at the end.
+	   负数的按位运算就像在2的补码表示上一样。
+	   因此，将参数从符号大小转换为2的补码，并在最后将结果转换回符号大小。
+	   */
 
-    /* If a is negative, replace it by its two's complement. */
+	   /* If a is negative, replace it by its two's complement.
+		  如果a是负数，则用其2的补码替换它。
+	   */
     size_a = Py_ABS(Py_SIZE(a));
     nega = Py_SIZE(a) < 0;
     if (nega) {
@@ -4500,13 +4813,18 @@ long_bitwise(PyLongObject *a,
         negz = nega; nega = negb; negb = negz;
     }
 
-    /* JRH: The original logic here was to allocate the result value (z)
-       as the longer of the two operands.  However, there are some cases
-       where the result is guaranteed to be shorter than that: AND of two
-       positives, OR of two negatives: use the shorter number.  AND with
-       mixed signs: use the positive number.  OR with mixed signs: use the
-       negative number.
-    */
+	/* JRH: The original logic here was to allocate the result value (z)
+	   as the longer of the two operands.  However, there are some cases
+	   where the result is guaranteed to be shorter than that: AND of two
+	   positives, OR of two negatives: use the shorter number.  AND with
+	   mixed signs: use the positive number.  OR with mixed signs: use the
+	   negative number.
+	   JRH：这里的原始逻辑是将结果值（z）分配为两个操作数中较长的一个。
+	   然而，在某些情况下，结果肯定比这个短：
+	   对于两个正数或两个负数：
+	   使用较短的数字。对于混合符号：使用正数。
+	   或混合符号：使用负数。
+	*/
     switch (op) {
     case '^':
         negz = nega ^ negb;
@@ -4525,8 +4843,11 @@ long_bitwise(PyLongObject *a,
         return NULL;
     }
 
-    /* We allow an extra digit if z is negative, to make sure that
-       the final two's complement of z doesn't overflow. */
+
+	/* We allow an extra digit if z is negative, to make sure that
+	   the final two's complement of z doesn't overflow.
+	   如果z为负数，我们允许增加一个数字，以确保最后两个z的补码不会溢出。
+	   */
     z = _PyLong_New(size_z + negz);
     if (z == NULL) {
         Py_DECREF(a);
@@ -4534,7 +4855,9 @@ long_bitwise(PyLongObject *a,
         return NULL;
     }
 
-    /* Compute digits for overlap of a and b. */
+	/* Compute digits for overlap of a and b.
+	   计算a和b重叠的数字
+	*/
     switch(op) {
     case '&':
         for (i = 0; i < size_b; ++i)
@@ -4553,7 +4876,9 @@ long_bitwise(PyLongObject *a,
         return NULL;
     }
 
-    /* Copy any remaining digits of a, inverting if necessary. */
+	/* Copy any remaining digits of a, inverting if necessary.
+	   复制a的任何剩余数字，必要时反转
+	*/
     if (op == '^' && negb)
         for (; i < size_z; ++i)
             z->ob_digit[i] = a->ob_digit[i] ^ PyLong_MASK;
@@ -4561,7 +4886,9 @@ long_bitwise(PyLongObject *a,
         memcpy(&z->ob_digit[i], &a->ob_digit[i],
                (size_z-i)*sizeof(digit));
 
-    /* Complement result if negative. */
+	/* Complement result if negative.
+		如果为负数，则补码结果。
+	 */
     if (negz) {
         Py_SIZE(z) = -(Py_SIZE(z));
         z->ob_digit[size_z] = PyLong_MASK;
@@ -4651,8 +4978,10 @@ _PyLong_GCD(PyObject *aarg, PyObject *barg)
     /* reduce until a fits into 2 digits */
     while ((size_a = Py_SIZE(a)) > 2) {
         nbits = bits_in_digit(a->ob_digit[size_a-1]);
-        /* extract top 2*PyLong_SHIFT bits of a into x, along with
-           corresponding bits of b into y */
+		/* extract top 2*PyLong_SHIFT bits of a into x, along with
+		   corresponding bits of b into y
+		   提取a的前2*PyLong_移位位到x，以及b的相应位到y
+		   */
         size_b = Py_SIZE(b);
         assert(size_b <= size_a);
         if (size_b == 0) {
@@ -4675,8 +5004,11 @@ _PyLong_GCD(PyObject *aarg, PyObject *barg)
              (size_b >= size_a - 1 ? (twodigits)b->ob_digit[size_a-2] << (PyLong_SHIFT-nbits) : 0) |
              (size_b >= size_a ? (twodigits)b->ob_digit[size_a-1] << (2*PyLong_SHIFT-nbits) : 0));
 
-        /* inner loop of Lehmer's algorithm; A, B, C, D never grow
-           larger than PyLong_MASK during the algorithm. */
+		/* inner loop of Lehmer's algorithm; A, B, C, D never grow
+		   larger than PyLong_MASK during the algorithm.
+		   Lehmer算法的内环；
+		   A、 在算法过程中，B、C、D永远不会比PyLong_MASK变大。
+		   */
         A = 1; B = 0; C = 0; D = 1;
         for (k=0;; k++) {
             if (y-C == 0)
@@ -4894,6 +5226,10 @@ long_new_impl(PyTypeObject *type, PyObject *x, PyObject *obase)
    first create a regular int from whatever arguments we got,
    then allocate a subtype instance and initialize it from
    the regular int.  The regular int is then thrown away.
+   tp_对int子类型的新调用的方法很慢：
+   首先从我们得到的任何参数创建一个常规int，
+   然后分配一个子类型实例并从常规int初始化它。
+   然后丢弃常规int。
 */
 static PyObject *
 long_subtype_new(PyTypeObject *type, PyObject *x, PyObject *obase)
@@ -4972,8 +5308,10 @@ int___format___impl(PyObject *self, PyObject *format_spec)
 /* Return a pair (q, r) such that a = b * q + r, and
    abs(r) <= abs(b)/2, with equality possible only if q is even.
    In other words, q == a / b, rounded to the nearest integer using
-   round-half-to-even. */
-
+   round-half-to-even.
+   返回一对（q，r），使a=b*q+r，abs（r）<=abs（b）/2，只有当q为偶数时才可能相等。
+   换言之，q==a/b，使用从一半到偶数的四舍五入方法将其四舍五入到最接近的整数。
+   */
 PyObject *
 _PyLong_DivmodNear(PyObject *a, PyObject *b)
 {
@@ -4981,21 +5319,32 @@ _PyLong_DivmodNear(PyObject *a, PyObject *b)
     PyObject *twice_rem, *result, *temp;
     int cmp, quo_is_odd, quo_is_neg;
 
-    /* Equivalent Python code:
+	/* Equivalent Python code:
 
-       def divmod_near(a, b):
-           q, r = divmod(a, b)
-           # round up if either r / b > 0.5, or r / b == 0.5 and q is odd.
-           # The expression r / b > 0.5 is equivalent to 2 * r > b if b is
-           # positive, 2 * r < b if b negative.
-           greater_than_half = 2*r > b if b > 0 else 2*r < b
-           exactly_half = 2*r == b
-           if greater_than_half or exactly_half and q % 2 == 1:
-               q += 1
-               r -= b
-           return q, r
-
-    */
+	   def divmod_near(a, b):
+		   q, r = divmod(a, b)
+		   # round up if either r / b > 0.5, or r / b == 0.5 and q is odd.
+		   # The expression r / b > 0.5 is equivalent to 2 * r > b if b is
+		   # positive, 2 * r < b if b negative.
+		   greater_than_half = 2*r > b if b > 0 else 2*r < b
+		   exactly_half = 2*r == b
+		   if greater_than_half or exactly_half and q % 2 == 1:
+			   q += 1
+			   r -= b
+		   return q, r
+		   等效Python代码：
+		   def divmod_靠近（a，b）：
+		   q、 r=divmod（a，b）
+		   #如果r/b>0.5或r/b==0.5且q为奇数，则进行四舍五入。
+		   #如果b为，则表达式r/b>0.5相当于2*r>b
+		   #正，如果b为负，则2*r<b。
+		   如果b>0，则大于一半=2*r>b，否则2*r<b
+		   正是_half=2*r==b
+		   如果大于或正好等于q%2且q%2==1：
+		   q+=1
+		   r-=b
+		   返回q，r
+	*/
     if (!PyLong_Check(a) || !PyLong_Check(b)) {
         PyErr_SetString(PyExc_TypeError,
                         "non-integer arguments in division");
@@ -5008,8 +5357,10 @@ _PyLong_DivmodNear(PyObject *a, PyObject *b)
     if (long_divrem((PyLongObject*)a, (PyLongObject*)b, &quo, &rem) < 0)
         goto error;
 
-    /* compare twice the remainder with the divisor, to see
-       if we need to adjust the quotient and remainder */
+	/* compare twice the remainder with the divisor, to see
+	   if we need to adjust the quotient and remainder
+	   比较两次余数和除数，看看我们是否需要调整商和余数
+	   */
     twice_rem = long_lshift((PyObject *)rem, _PyLong_One);
     if (twice_rem == NULL)
         goto error;
@@ -5065,20 +5416,29 @@ long_round(PyObject *self, PyObject *args)
 {
     PyObject *o_ndigits=NULL, *temp, *result, *ndigits;
 
-    /* To round an integer m to the nearest 10**n (n positive), we make use of
-     * the divmod_near operation, defined by:
-     *
-     *   divmod_near(a, b) = (q, r)
-     *
-     * where q is the nearest integer to the quotient a / b (the
-     * nearest even integer in the case of a tie) and r == a - q * b.
-     * Hence q * b = a - r is the nearest multiple of b to a,
-     * preferring even multiples in the case of a tie.
-     *
-     * So the nearest multiple of 10**n to m is:
-     *
-     *   m - divmod_near(m, 10**n)[1].
-     */
+	/* To round an integer m to the nearest 10**n (n positive), we make use of
+	 * the divmod_near operation, defined by:
+	 *
+	 *   divmod_near(a, b) = (q, r)
+	 *
+	 * where q is the nearest integer to the quotient a / b (the
+	 * nearest even integer in the case of a tie) and r == a - q * b.
+	 * Hence q * b = a - r is the nearest multiple of b to a,
+	 * preferring even multiples in the case of a tie.
+	 *
+	 * So the nearest multiple of 10**n to m is:
+	 *
+	 *   m - divmod_near(m, 10**n)[1].
+	 为了将整数m四舍五入到最接近的10**n（n正），我们使用
+	 divmod_near操作，定义如下：
+		divmod_near(a, b) = (q, r)
+	 q是商a/b的最近整数（
+	 最近的偶数整数（在平局的情况下）和r==a-q*b。
+	 因此q*b=a-r是b到a的最近倍数，
+	 在平局时更喜欢偶数倍。
+	 因此，10**n到m的最近倍数为：
+		m - divmod_near(m, 10**n)[1].
+	 */
     if (!PyArg_ParseTuple(args, "|O", &o_ndigits))
         return NULL;
     if (o_ndigits == NULL)
@@ -5219,22 +5579,31 @@ long_is_finite(PyObject *v)
 /*[clinic input]
 int.to_bytes
 
-    length: Py_ssize_t
-        Length of bytes object to use.  An OverflowError is raised if the
-        integer is not representable with the given number of bytes.
-    byteorder: unicode
-        The byte order used to represent the integer.  If byteorder is 'big',
-        the most significant byte is at the beginning of the byte array.  If
-        byteorder is 'little', the most significant byte is at the end of the
-        byte array.  To request the native byte order of the host system, use
-        `sys.byteorder' as the byte order value.
-    *
-    signed as is_signed: bool = False
-        Determines whether two's complement is used to represent the integer.
-        If signed is False and a negative integer is given, an OverflowError
-        is raised.
+	length: Py_ssize_t
+		Length of bytes object to use.  An OverflowError is raised if the
+		integer is not representable with the given number of bytes.
+	byteorder: unicode
+		The byte order used to represent the integer.  If byteorder is 'big',
+		the most significant byte is at the beginning of the byte array.  If
+		byteorder is 'little', the most significant byte is at the end of the
+		byte array.  To request the native byte order of the host system, use
+		`sys.byteorder' as the byte order value.
+	*
+	signed as is_signed: bool = False
+		Determines whether two's complement is used to represent the integer.
+		If signed is False and a negative integer is given, an OverflowError
+		is raised.
 
 Return an array of bytes representing an integer.
+	 int.to_字节
+	 长度：Py_ssize_t
+	 要使用的字节对象的长度。如果整数不能用给定的字节数表示。字节顺序：
+	 unicode用于表示整数的字节顺序。如果字节顺序是“大的”，
+	 最高有效字节位于字节数组的开头。如果字节顺序为“小”，最高有效字节位于字节数组。
+	 要请求主机系统的本机字节顺序，请使用sys.byteorder'作为字节顺序值。
+	 按原样签名：bool=False 确定是否使用2的补码表示整数。
+	 如果有符号为False，并且给出了一个负整数，则会出现溢出错误这是提高。
+	 返回表示整数的字节数组。
 [clinic start generated code]*/
 
 static PyObject *
@@ -5279,22 +5648,32 @@ int_to_bytes_impl(PyObject *self, Py_ssize_t length, PyObject *byteorder,
 @classmethod
 int.from_bytes
 
-    bytes as bytes_obj: object
-        Holds the array of bytes to convert.  The argument must either
-        support the buffer protocol or be an iterable object producing bytes.
-        Bytes and bytearray are examples of built-in objects that support the
-        buffer protocol.
-    byteorder: unicode
-        The byte order used to represent the integer.  If byteorder is 'big',
-        the most significant byte is at the beginning of the byte array.  If
-        byteorder is 'little', the most significant byte is at the end of the
-        byte array.  To request the native byte order of the host system, use
-        `sys.byteorder' as the byte order value.
-    *
-    signed as is_signed: bool = False
-        Indicates whether two's complement is used to represent the integer.
+	bytes as bytes_obj: object
+		Holds the array of bytes to convert.  The argument must either
+		support the buffer protocol or be an iterable object producing bytes.
+		Bytes and bytearray are examples of built-in objects that support the
+		buffer protocol.
+	byteorder: unicode
+		The byte order used to represent the integer.  If byteorder is 'big',
+		the most significant byte is at the beginning of the byte array.  If
+		byteorder is 'little', the most significant byte is at the end of the
+		byte array.  To request the native byte order of the host system, use
+		`sys.byteorder' as the byte order value.
+	*
+	signed as is_signed: bool = False
+		Indicates whether two's complement is used to represent the integer.
 
 Return the integer represented by the given array of bytes.
+	字节为字节\u obj:object
+	保存要转换的字节数组。这个论点必须是支持缓冲区协议或是可生成字节的iterable对象。
+	Bytes和bytearray是支持缓冲协议。
+	字节顺序：unicode
+	用于表示整数的字节顺序。如果字节顺序是“大的”，
+	最高有效字节位于字节数组的开头。
+	如果字节顺序为“小”，最高有效字节位于字节数组。
+	要请求主机系统的本机字节顺序，请使用`sys.byteorder'作为字节顺序值。
+	按原样签名：bool=False指示是否使用2的补码表示整数。
+	返回由给定字节数组表示的整数。
 [clinic start generated code]*/
 
 static PyObject *
@@ -5566,9 +5945,11 @@ _PyLong_Init(void)
 void
 PyLong_Fini(void)
 {
-    /* Integers are currently statically allocated. Py_DECREF is not
-       needed, but Python must forget about the reference or multiple
-       reinitializations will fail. */
+	/* Integers are currently statically allocated. Py_DECREF is not
+	   needed, but Python must forget about the reference or multiple
+	   reinitializations will fail.
+	   整数当前是静态分配的。不需要Py_DECREF，但Python必须忘记引用或多个重新初始化将失败
+	   */
     Py_CLEAR(_PyLong_One);
     Py_CLEAR(_PyLong_Zero);
 #if NSMALLNEGINTS + NSMALLPOSINTS > 0

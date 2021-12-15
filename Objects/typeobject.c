@@ -20,7 +20,13 @@ class object "PyObject *" "&PyBaseObject_Type"
 /* The cache can keep references to the names alive for longer than
    they normally would.  This is why the maximum size is limited to
    MCACHE_MAX_ATTR_SIZE, since it might be a problem if very large
-   strings are used as attribute names. */
+   strings are used as attribute names. 
+   
+   缓存可以使对名称的引用保持活动状态的时间比正常情况下更长。
+   这就是将最大大小限制为MCACHE_MAX_ATTR_size的原因，
+   因为如果将非常大的字符串用作属性名称，可能会出现问题
+   
+   */
 #define MCACHE_MAX_ATTR_SIZE    100
 #define MCACHE_SIZE_EXP         12
 #define MCACHE_HASH(version, name_hash)                                 \
@@ -85,6 +91,10 @@ lookup_maybe_method(PyObject *self, _Py_Identifier *attrid, int *unbound);
  * if present, returns a pointer pointing to the first '('.
  * otherwise returns NULL.
  *
+
+查找docstring的内省签名的开头。
+如果存在，则返回指向第一个“（”的指针。否则返回NULL。
+
  * doesn't guarantee that the signature is valid, only that it
  * has a valid prefix.  (the signature must also pass skip_signature.)
  */
@@ -235,25 +245,38 @@ _PyType_Fini(void)
 void
 PyType_Modified(PyTypeObject *type)
 {
-    /* Invalidate any cached data for the specified type and all
-       subclasses.  This function is called after the base
-       classes, mro, or attributes of the type are altered.
+	/* Invalidate any cached data for the specified type and all
+	   subclasses.  This function is called after the base
+	   classes, mro, or attributes of the type are altered.
 
-       Invariants:
+	   使指定类型和所有子类的任何缓存数据无效。此函数在更改基类、mro或类型的属性后调用。
 
-       - Py_TPFLAGS_VALID_VERSION_TAG is never set if
-         Py_TPFLAGS_HAVE_VERSION_TAG is not set (e.g. on type
-         objects coming from non-recompiled extension modules)
+	   Invariants:
 
-       - before Py_TPFLAGS_VALID_VERSION_TAG can be set on a type,
-         it must first be set on all super types.
+	   - Py_TPFLAGS_VALID_VERSION_TAG is never set if
+		 Py_TPFLAGS_HAVE_VERSION_TAG is not set (e.g. on type
+		 objects coming from non-recompiled extension modules)
 
-       This function clears the Py_TPFLAGS_VALID_VERSION_TAG of a
-       type (so it must first clear it on all subclasses).  The
-       tp_version_tag value is meaningless unless this flag is set.
-       We don't assign new version tags eagerly, but only as
-       needed.
-     */
+	   - before Py_TPFLAGS_VALID_VERSION_TAG can be set on a type,
+		 it must first be set on all super types.
+
+	   This function clears the Py_TPFLAGS_VALID_VERSION_TAG of a
+	   type (so it must first clear it on all subclasses).  The
+	   tp_version_tag value is meaningless unless this flag is set.
+	   We don't assign new version tags eagerly, but only as
+	   needed.
+
+	   不变情况：
+
+	   - 如果未设置Py_TPFLAGS_VALID_VERSION_标记（例如，在来自未重新编译的扩展模块的类型对象上），
+		 则永远不会设置Py_TPFLAGS_VALID_VERSION_标记；
+
+	   - 在类型上设置Py_TPFLAGS_VALID_VERSION_标记之前，必须先在所有超级类型上设置它。
+
+	   此函数用于清除类型的Py_TPFLAGS_VALID_VERSION_TAG（因此必须首先在所有子类上清除它）。
+	   除非设置此标志，否则tp_version_tag值没有意义。我们并不急切地分配新的版本标签，只在需要时分配。
+
+	 */
     PyObject *raw, *ref;
     Py_ssize_t i;
 
@@ -1147,7 +1170,12 @@ subtype_dealloc(PyObject *self)
            GC; it can only happen when deriving from 'object' and not
            adding any slots or instance variables.  This allows
            certain simplifications: there's no need to call
-           clear_slots(), or DECREF the dict, or clear weakrefs. */
+           clear_slots(), or DECREF the dict, or clear weakrefs. 
+		   
+		   很少能找到没有GC的动态类型；它只能在从“对象”派生并且不添加任何插槽或实例变量时发生。
+		   这允许某些简化：不需要调用clear_slots（），也不需要对dict或clear weakrefs进行定义。
+		   
+		   */
 
         /* Maybe call finalizer; exit early if resurrected */
         if (type->tp_finalize) {
@@ -1213,6 +1241,9 @@ subtype_dealloc(PyObject *self)
     /*
       If we added a weaklist, we clear it. Do this *before* calling tp_del,
       clearing slots, or clearing the instance dict.
+
+	  如果我们增加了一个weaklist，我们就会清除它。
+	  在*调用tp_del、清除插槽或清除实例dict之前*执行此操作。
 
       GC tracking must be off at this point. weakref callbacks (if any, and
       whether directly here or indirectly in something we call) may trigger GC,
@@ -1432,16 +1463,24 @@ PyType_IsSubtype(PyTypeObject *a, PyTypeObject *b)
    instance dictionary (so we can't use PyObject_GetAttr) but still
    binding it to the instance.
 
+   在类型中执行方法查找而不查看实例字典（因此我们不能使用PyObject_GetAttr）但仍将其绑定到实例的例程。
+
    Variants:
 
    - _PyObject_LookupSpecial() returns NULL without raising an exception
-     when the _PyType_Lookup() call fails;
+	 when the _PyType_Lookup() call fails;
 
    - lookup_maybe_method() and lookup_method() are internal routines similar
-     to _PyObject_LookupSpecial(), but can return unbound PyFunction
-     to avoid temporary method object. Pass self as first argument when
-     unbound == 1.
-*/
+	 to _PyObject_LookupSpecial(), but can return unbound PyFunction
+	 to avoid temporary method object. Pass self as first argument when
+	 unbound == 1.
+
+   变化：
+
+   -_PyObject_LookupSpecial（）在_PyType_Lookup（）调用失败时返回NULL而不引发异常；
+
+   - lookup_maybe_method()和lookup_method()是类似于_PyObject_LookupSpecial()的内部例程，
+   但可以返回未绑定的PyFunction来避免临时方法对象。当unbound==1时，将self作为第一个参数传递。*/
 
 PyObject *
 _PyObject_LookupSpecial(PyObject *self, _Py_Identifier *attrid)
@@ -1647,11 +1686,16 @@ check_duplicates(PyObject *tuple)
 
 /* Raise a TypeError for an MRO order disagreement.
 
+   针对MRO order不一致，引发TypeError。
+
    It's hard to produce a good error message.  In the absence of better
    insight into error reporting, report the classes that were candidates
    to be put next into the MRO.  There is some conflict between the
    order in which they should be put in the MRO, but it's hard to
    diagnose what constraint can't be satisfied.
+
+   这很难产生好的错误消息。如果无法更好地了解错误报告，就报告下一步要放入MRO的候选类。
+   它们在MRO中的放置顺序存在一些冲突，但很难诊断哪些约束不能满足。
 */
 
 static void
@@ -1913,16 +1957,23 @@ mro_check(PyTypeObject *type, PyObject *mro)
 /* Lookups an mcls.mro method, invokes it and checks the result (if needed,
    in case of a custom mro() implementation).
 
+   查找mcls.mro方法，调用它并检查结果（如果需要，在自定义mro（）实现的情况下）。
+
    Keep in mind that during execution of this function type->tp_mro
    can be replaced due to possible reentrance (for example,
    through type_set_bases):
 
-      - when looking up the mcls.mro attribute (it could be
-        a user-provided descriptor);
+	  - when looking up the mcls.mro attribute (it could be
+		a user-provided descriptor);
 
-      - from inside a custom mro() itself;
+	  - from inside a custom mro() itself;
 
-      - through a finalizer of the return value of mro().
+	  - through a finalizer of the return value of mro().
+
+   请记住，在执行此函数期间，type->tp_mro可能会由于可能的重新进入而被替换（例如，通过type_set_bases）：
+	-在查找mcls.mro属性（可以是用户提供的描述符）；
+	-从自定义mro()本身内部；
+	-通过mro()返回值的终结器。
 */
 static PyObject *
 mro_invoke(PyTypeObject *type)
@@ -3031,7 +3082,14 @@ PyType_GetSlot(PyTypeObject *type, int slot)
 
 /* Internal API to look for a name through the MRO, bypassing the method cache.
    This returns a borrowed reference, and might set an exception.
-   'error' is set to: -1: error with exception; 1: error without exception; 0: ok */
+   'error' is set to: -1: error with exception; 1: error without exception; 0: ok
+
+   通过MRO查找名称的内部API，并绕过方法缓存。
+   这将返回借用的引用，并可能设置异常。
+   “error”设置为：
+   -1：异常错误；
+   1：无异常错误；
+   0：正常*/
 static PyObject *
 find_name_in_mro(PyTypeObject *type, PyObject *name, int *error)
 {
@@ -4150,11 +4208,14 @@ _PyObject_GetState(PyObject *obj, int required)
         {
             PyObject **dict;
             dict = _PyObject_GetDictPtr(obj);
-            /* It is possible that the object's dict is not initialized
-               yet. In this case, we will return None for the state.
-               We also return None if the dict is empty to make the behavior
-               consistent regardless whether the dict was initialized or not.
-               This make unit testing easier. */
+			/* It is possible that the object's dict is not initialized
+			   yet. In this case, we will return None for the state.
+			   We also return None if the dict is empty to make the behavior
+			   consistent regardless whether the dict was initialized or not.
+			   This make unit testing easier.
+			   对象的dict可能尚未初始化。在这种情况下，我们将为状态返回None。
+			   如果dict为空，我们也会返回None，以使行为一致，无论dict是否初始化。
+			   这使得单元测试更容易。*/
             if (dict != NULL && *dict != NULL && PyDict_GET_SIZE(*dict)) {
                 state = *dict;
             }
@@ -5436,13 +5497,18 @@ check_num_args(PyObject *ob, int n)
     return 0;
 }
 
-/* Generic wrappers for overloadable 'operators' such as __getitem__ */
+/* Generic wrappers for overloadable 'operators' such as __getitem__
+   可重载“运算符”的通用包装器，如__getitem__*/
 
-/* There's a wrapper *function* for each distinct function typedef used
-   for type object slots (e.g. binaryfunc, ternaryfunc, etc.).  There's a
-   wrapper *table* for each distinct operation (e.g. __len__, __add__).
-   Most tables have only one entry; the tables for binary operators have two
-   entries, one regular and one with reversed arguments. */
+   /* There's a wrapper *function* for each distinct function typedef used
+	  for type object slots (e.g. binaryfunc, ternaryfunc, etc.).  There's a
+	  wrapper *table* for each distinct operation (e.g. __len__, __add__).
+	  Most tables have only one entry; the tables for binary operators have two
+	  entries, one regular and one with reversed arguments.
+
+	  对于用于类型对象槽（例如binaryfunc、ternaryfunc等）的每个不同函数typedef，都有一个包装器*函数*。
+	  每个不同的操作都有一个包装器表（例如__len__, __add__）。
+	  大多数表只有一个条目；二进制运算符的表有两个条目，一个为正则项，另一个为反向参数。*/
 
 static PyObject *
 wrap_lenfunc(PyObject *self, PyObject *args, void *wrapped)
@@ -5691,7 +5757,10 @@ wrap_delitem(PyObject *self, PyObject *args, void *wrapped)
 }
 
 /* Helper to check for object.__setattr__ or __delattr__ applied to a type.
-   This is called the Carlo Verre hack after its discoverer. */
+   This is called the Carlo Verre hack after its discoverer.
+
+   用于检查object.__setattr__或__delattr__是否被应用于类型。
+   这被称为the Carlo Verre hack，以其发现者的名字命名。*/
 static int
 hackcheck(PyObject *self, setattrofunc func, const char *what)
 {
@@ -6412,13 +6481,23 @@ slot_tp_call(PyObject *self, PyObject *args, PyObject *kwds)
 /* There are two slot dispatch functions for tp_getattro.
 
    - slot_tp_getattro() is used when __getattribute__ is overridden
-     but no __getattr__ hook is present;
+	 but no __getattr__ hook is present;
 
    - slot_tp_getattr_hook() is used when a __getattr__ hook is present.
 
    The code in update_one_slot() always installs slot_tp_getattr_hook(); this
    detects the absence of __getattr__ and then installs the simpler slot if
-   necessary. */
+   necessary.
+
+   tp_getattro有两个插槽调度函数。
+
+   - slot_tp_getattro()用于__getattribute__被覆盖但不存在__getattr__ 的情况；
+   - slot_tp_getattr_hook()在存在__getattr__钩子时使用。
+
+   update_one_slot（）中的代码始终安装slot_tp_getattr_hook（）；
+   这就检测到了__getattr__不存在的情况，然后在必要时安装更简单的插槽。
+*/
+
 
 static PyObject *
 slot_tp_getattro(PyObject *self, PyObject *name)
@@ -7002,7 +7081,11 @@ static slotdef slotdefs[] = {
    pointer to the actual slot.  This is not quite the same as simply adding
    the offset to the type pointer, since it takes care to indirect through the
    proper indirection pointer (as_buffer, etc.); it returns NULL if the
-   indirection pointer is NULL. */
+   indirection pointer is NULL.
+
+   给定类型指针和从slotdef入口获得的偏移量，返回指向实际插槽的指针。
+   这与简单地添加类型指针的偏移量不同，因为它注意通过适当的间接指针进行间接操作（如_buffer等）；
+   如果间接指针为NULL，则返回NULL */
 static void **
 slotptr(PyTypeObject *type, int ioffset)
 {
@@ -7042,8 +7125,10 @@ slotptr(PyTypeObject *type, int ioffset)
    appropriate to declare fixed-size arrays for this. */
 #define MAX_EQUIV 10
 
-/* Return a slot pointer for a given name, but ONLY if the attribute has
-   exactly one slot function.  The name must be an interned string. */
+   /* Return a slot pointer for a given name, but ONLY if the attribute has
+	  exactly one slot function.  The name must be an interned string.
+
+	  返回给定名称的插槽指针，但仅当该属性具有只有一个插槽功能。名称必须是插入的字符串。*/
 static void **
 resolve_slotdups(PyTypeObject *type, PyObject *name)
 {
@@ -7085,7 +7170,12 @@ resolve_slotdups(PyTypeObject *type, PyObject *name)
    slot.  (It sees if the adjacent slotdefs for the same slot have conflicting
    interests, and then stores a generic wrapper or a specific function into
    the slot.)  Return a pointer to the next slotdef with a different offset,
-   because that's convenient  for fixup_slot_dispatchers(). */
+   because that's convenient  for fixup_slot_dispatchers().
+
+	update_slots_callback() 和 fixup_slot_dispatchers()的通用代码。
+	这做一些非常复杂的思考，然后把一些东西放进插槽。
+	（它查看同一插槽的相邻插槽DEF是否存在冲突利益，然后将通用包装器或特定函数存储到
+	插槽。）返回指向具有不同偏移量的下一个slotdef的指针，因为这对fixup_slot_dispatchers()很方便。*/
 static slotdef *
 update_one_slot(PyTypeObject *type, slotdef *p)
 {
@@ -7258,9 +7348,11 @@ update_slot(PyTypeObject *type, PyObject *name)
                              update_slots_callback, (void *)ptrs);
 }
 
+
 /* Store the proper functions in the slot dispatches at class (type)
    definition time, based upon which operations the class overrides in its
-   dict. */
+   dict.
+   在类（类型）定义时的插槽调度中存储适当的函数，基于类在其dict中重写的操作*/
 static void
 fixup_slot_dispatchers(PyTypeObject *type)
 {
@@ -7351,8 +7443,10 @@ init_subclass(PyTypeObject *type, PyObject *kwds)
 
 /* recurse_down_subclasses() and update_subclasses() are mutually
    recursive functions to call a callback for all subclasses,
-   but refraining from recursing into subclasses that define 'name'. */
-
+   but refraining from recursing into subclasses that define 'name'.
+   recurse_down_subclasses()(递归子类函数)和update_subclasses()(更新子类函数)是相互关联的
+   递归函数来调用所有子类的回调，
+   但是避免递归到定义“name”的子类中。*/
 static int
 update_subclasses(PyTypeObject *type, PyObject *name,
                   update_callback callback, void *data)
@@ -7403,6 +7497,12 @@ recurse_down_subclasses(PyTypeObject *type, PyObject *name,
    slots compete for the same descriptor (for example both sq_item and
    mp_subscript generate a __getitem__ descriptor).
 
+   PyType_Ready（）调用此函数以填充类型的带有函数槽方法描述符的字典。
+   对于类型中定义的每个函数槽（如tp_repr），一个或多个相应的描述符被添加在
+   类型的tp_dict字典中，并使用适当的名称（如__repr__;）。一些功能插槽导致添加
+   多个描述符（例如，nb_add插槽添加了__add__ and __radd__描述符）和一些函数
+   插槽竞争相同的描述符（例如sq_项和mp_下标生成一个__getitem__描述符）。
+
    In the latter case, the first slotdef entry encountered wins.  Since
    slotdef entries are sorted by the offset of the slot in the
    PyHeapTypeObject, this gives us some control over disambiguating
@@ -7411,6 +7511,11 @@ recurse_down_subclasses(PyTypeObject *type, PyObject *name,
    preferred.  In particular, because as_mapping comes before as_sequence,
    for a type that defines both mp_subscript and sq_item, mp_subscript
    wins.
+
+   在后一种情况下，第一个slotdef条目遇到wins。自从slotdef条目按PyHeapTypeObject中
+   插槽的偏移量排序，这给了我们一些可以在竞争插槽之间消除歧义的控制方式：
+   PyHeapTypeObject的成员从最通用到最不通用被列出了，因此最通用的插槽是首选。
+   特别是因为as_mapping在as_sequence之前，对于同时定义mp_subscript和sq_item的类型，mp_subscript赢了。
 
    This only adds new descriptors and doesn't overwrite entries in
    tp_dict that were previously defined.  The descriptors contain a
@@ -7421,7 +7526,13 @@ recurse_down_subclasses(PyTypeObject *type, PyObject *name,
    rather than the C function present in the slot when it is called.
    (This is important because a subtype may have a C function in the
    slot that calls the method from the dictionary, and we want to avoid
-   infinite recursion here.) */
+   infinite recursion here.)
+   这只会添加新的描述符，并且不会覆盖tp_dict中以前定义的条目。
+   描述符包含一个引用指向他们必须调用的C函数，这样下面的举动就会是安全的：
+   如果他们被复制到子类型的__dict__中，并且子类型在其插槽中具有不同的C函数
+   --使用描述符调用定义的方法时将调用用于创建它的C函数，而不是调用时隙中的C函数。
+   （这很重要，因为子类型可能会有一个在从字典中调用方法的C函数在插槽里，
+   我们希望在这里避免无限递归。）*/
 
 static int
 add_operators(PyTypeObject *type)
@@ -7591,20 +7702,35 @@ super_getattro(PyObject *self, PyObject *name)
 static PyTypeObject *
 supercheck(PyTypeObject *type, PyObject *obj)
 {
-    /* Check that a super() call makes sense.  Return a type object.
+	/* Check that a super() call makes sense.  Return a type object.
 
-       obj can be a class, or an instance of one:
+	   obj can be a class, or an instance of one:
 
-       - If it is a class, it must be a subclass of 'type'.      This case is
-         used for class methods; the return value is obj.
+	   - If it is a class, it must be a subclass of 'type'.      This case is
+		 used for class methods; the return value is obj.
 
-       - If it is an instance, it must be an instance of 'type'.  This is
-         the normal case; the return value is obj.__class__.
+	   - If it is an instance, it must be an instance of 'type'.  This is
+		 the normal case; the return value is obj.__class__.
 
-       But... when obj is an instance, we want to allow for the case where
-       Py_TYPE(obj) is not a subclass of type, but obj.__class__ is!
-       This will allow using super() with a proxy for obj.
-    */
+	   But... when obj is an instance, we want to allow for the case where
+	   Py_TYPE(obj) is not a subclass of type, but obj.__class__ is!
+	   This will allow using super() with a proxy for obj.
+
+	   检查super（）调用是否有意义。返回类型对象。
+
+	   obj可以是一个类，也可以是一个实例：
+
+	   - 如果它是一个类，那么它必须是“type”的子类。这个例子是
+	   用于类方法；返回值为obj。
+
+	   -如果是实例，则必须是“类型”的实例。这是正常情况；
+	   返回值为obj.__class__。
+
+	   但是，当obj是一个实例时，我们要考虑以下情况：
+	   Py_TYPE（obj）不是TYPE的子类，但是obj.__class__是！
+	   这将导致允许super（）与obj的代理一起使用。
+
+	*/
 
     /* Check for first bullet above (special case) */
     if (PyType_Check(obj) && PyType_IsSubtype((PyTypeObject *)obj, type)) {

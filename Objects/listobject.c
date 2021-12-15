@@ -44,6 +44,15 @@ static void trace_free_list(PyListObject *a);
  * Note that self->ob_item may change, and even if newsize is less
  * than ob_size on entry.
  */
+
+ /*确保ob_item至少有容纳newsize元素的空间,并将ob_size赋予newsize。
+  *如果在输入newsize > obsize，则输出新的slots的内容则是未定义的堆；
+  *调用者应该用新的元素覆盖掉他们。
+  *已分配元素的数量可能会增加、减少或保持不变。
+  *如果newsize <= self,则必定执行成功，即使这一部分依赖于一个假设，
+  *当传递的字节数 <= 最后分配的字节数（C标准不能保证这一点，但很难想象到一个realloc实现是不能做到这一点）时，系统realloc（）不会失败
+  *注意self->ob_item可能会改变，即使输入的newsize会小于ob_size
+  */
 static int
 list_resize(PyListObject *self, Py_ssize_t newsize)
 {
@@ -55,9 +64,12 @@ list_resize(PyListObject *self, Py_ssize_t newsize)
        to accommodate the newsize.  If the newsize falls lower than half
        the allocated size, then proceed with the realloc() to shrink the list.
     */
+	/*当上一个过度分配大到足以容纳newsize时，绕过realloc()。
+	 * 如果newsize低于所分配大小的一半，则继续执行realloc()来缩小列表。
+	 */
     if (allocated >= newsize && newsize >= (allocated >> 1)) {
         assert(self->ob_item != NULL || newsize == 0);
-        Py_SIZE(self) = newsize;
+        Py_SIZE(self) = newsize;  /* ((PyVarObject*)(self))->ob_size = newsize;  调整ob_size值 */
         return 0;
     }
 
@@ -70,7 +82,14 @@ list_resize(PyListObject *self, Py_ssize_t newsize)
      * Note: new_allocated won't overflow because the largest possible value
      *       is PY_SSIZE_T_MAX * (9 / 8) + 6 which always fits in a size_t.
      */
-    new_allocated = (size_t)newsize + (newsize >> 3) + (newsize < 9 ? 3 : 6);
+	 /*这种过度分配与列表大小成比例，为额外的增长腾出空间。
+	  *过度分配虽然温和，足以在存在性能较差的系统realloc()的情况下，
+	  *对一长串appends()进行线性时间平摊行为
+	  *增长模式为:0、4、8、16、25、35、46、58、72、88、……
+	  *注意:new_allocated不会溢出，因为最大的可能值是PY_SSIZE_T_MAX *(9 / 8) + 6，它总是适合size_t。
+	  */
+    /* 计算重新申请的内存大小 */
+	new_allocated = (size_t)newsize + (newsize >> 3) + (newsize < 9 ? 3 : 6);
     if (new_allocated > (size_t)PY_SSIZE_T_MAX / sizeof(PyObject *)) {
         PyErr_NoMemory();
         return -1;
@@ -78,8 +97,10 @@ list_resize(PyListObject *self, Py_ssize_t newsize)
 
     if (newsize == 0)
         new_allocated = 0;
+	/* 拓展列表 */
     num_allocated_bytes = new_allocated * sizeof(PyObject *);
-    items = (PyObject **)PyMem_Realloc(self->ob_item, num_allocated_bytes);
+    /* 调用C中的realloc */
+	items = (PyObject **)PyMem_Realloc(self->ob_item, num_allocated_bytes);
     if (items == NULL) {
         PyErr_NoMemory();
         return -1;
@@ -114,6 +135,7 @@ show_alloc(void)
 #endif
 
 /* Empty list reuse scheme to save calls to malloc and free */
+/*清空列表重新使用模型以保存对 malloc 和 free 的调用*/
 #ifndef PyList_MAXFREELIST
 #define PyList_MAXFREELIST 80
 #endif
@@ -140,6 +162,7 @@ PyList_Fini(void)
 }
 
 /* Print summary info about the state of the optimized allocator */
+/* 打印关于优化分配器状态的摘要信息 */
 void
 _PyList_DebugMallocStats(FILE *out)
 {
@@ -164,7 +187,9 @@ PyList_New(Py_ssize_t size)
         PyErr_BadInternalCall();
         return NULL;
     }
+	// 为PyListObject对象申请空间
     if (numfree) {
+		// 缓冲池可用
         numfree--;
         op = free_list[numfree];
         _Py_NewReference((PyObject *)op);
@@ -172,6 +197,7 @@ PyList_New(Py_ssize_t size)
         count_reuse++;
 #endif
     } else {
+		// 缓冲池不可用
         op = PyObject_GC_New(PyListObject, &PyList_Type);
         if (op == NULL)
             return NULL;
@@ -179,6 +205,7 @@ PyList_New(Py_ssize_t size)
         count_alloc++;
 #endif
     }
+	// 为PyListObject对象中维护的元素列表申请空间
     if (size <= 0)
         op->ob_item = NULL;
     else {
@@ -237,17 +264,20 @@ PyList_SetItem(PyObject *op, Py_ssize_t i,
                PyObject *newitem)
 {
     PyObject **p;
+	// 类型检查
     if (!PyList_Check(op)) {
         Py_XDECREF(newitem);
         PyErr_BadInternalCall();
         return -1;
     }
+	// 索引检查
     if (i < 0 || i >= Py_SIZE(op)) {
         Py_XDECREF(newitem);
         PyErr_SetString(PyExc_IndexError,
                         "list assignment index out of range");
         return -1;
     }
+	// 设置元素
     p = ((PyListObject *)op) -> ob_item + i;
 #ifdef Py_REF_DEBUG
 	set_item_hit(newitem);
@@ -261,6 +291,7 @@ ins1(PyListObject *self, Py_ssize_t where, PyObject *v)
 {
     Py_ssize_t i, n = Py_SIZE(self);
     PyObject **items;
+	// 插入为空
     if (v == NULL) {
         PyErr_BadInternalCall();
         return -1;
@@ -270,17 +301,22 @@ ins1(PyListObject *self, Py_ssize_t where, PyObject *v)
             "cannot add more objects to list");
         return -1;
     }
-
+	// 调整列表容量
     if (list_resize(self, n+1) < 0)
         return -1;
 
+	// 确定插入点
     if (where < 0) {
+		// list[-x]的逻辑
         where += n;
+		// 逆索引+n以后依然小于0，则插入头部
         if (where < 0)
             where = 0;
     }
+	// 插入的位数大于list长度，就直接插入尾部
     if (where > n)
         where = n;
+	// 插入元素
     items = self->ob_item;
     for (i = n; --i >= where; )
         items[i+1] = items[i];
@@ -348,17 +384,22 @@ list_dealloc(PyListObject *op)
     Py_ssize_t i;
     PyObject_GC_UnTrack(op);
     Py_TRASHCAN_SAFE_BEGIN(op)
+	// 销毁PyListObject对象维护的元素列表
     if (op->ob_item != NULL) {
-        /* Do it backwards, for Christian Tismer.
-           There's a simple test case where somehow this reduces
-           thrashing when a *very* large list is created and
-           immediately deleted. */
+		/* Do it backwards, for Christian Tismer.
+		   There's a simple test case where somehow this reduces
+		   thrashing when a *very* large list is created and
+		   immediately deleted.
+		   为克里斯蒂安·蒂斯默倒过来。有一个简单的测试用例，
+		   当创建一个*非常*大的列表并立即删除时，它以某种方式减少了颠簸。
+		   */
         i = Py_SIZE(op);
         while (--i >= 0) {
             Py_XDECREF(op->ob_item[i]);
         }
         PyMem_FREE(op->ob_item);
     }
+	// 释放PyListObject自身，检查缓冲池是否满了，如果没满，则把该待删除的PyListObject对象放入缓冲池中
     if (numfree < PyList_MAXFREELIST && PyList_CheckExact(op))
         free_list[numfree++] = op;
     else
@@ -390,8 +431,10 @@ list_repr(PyListObject *v)
     if (_PyUnicodeWriter_WriteChar(&writer, '[') < 0)
         goto error;
 
-    /* Do repr() on each element.  Note that this may mutate the list,
-       so must refetch the list size on each iteration. */
+	/* Do repr() on each element.  Note that this may mutate the list,
+	   so must refetch the list size on each iteration.
+	   对每个元素执行 repr（）。 注意这可能会改变列表，
+	   因此，必须在每次迭代时重新获取list size*/
     for (i = 0; i < Py_SIZE(v); ++i) {
         if (i > 0) {
             if (_PyUnicodeWriter_WriteASCIIString(&writer, ", ", 2) < 0)
@@ -588,8 +631,10 @@ _list_clear(PyListObject *a)
     Py_ssize_t i;
     PyObject **item = a->ob_item;
     if (item != NULL) {
-        /* Because XDECREF can recursively invoke operations on
-           this list, we make it empty first. */
+		/* Because XDECREF can recursively invoke operations on
+		   this list, we make it empty first.
+		   由于 XDECREF 可以递归调用此列表，因此我们首先将其设为空
+		*/
         i = Py_SIZE(a);
         Py_SIZE(a) = 0;
         a->ob_item = NULL;
@@ -599,9 +644,13 @@ _list_clear(PyListObject *a)
         }
         PyMem_FREE(item);
     }
-    /* Never fails; the return value can be ignored.
-       Note that there is no guarantee that the list is actually empty
-       at this point, because XDECREF may have populated it again! */
+	/* Never fails; the return value can be ignored.
+	   Note that there is no guarantee that the list is actually empty
+	   at this point, because XDECREF may have populated it again!
+	   不会失败;可以忽略返回值。
+	   请注意，不能保证此时列表是空的
+	   因为XDECREF可能已经再次填充了它！
+	*/
     return 0;
 }
 
@@ -614,12 +663,17 @@ _list_clear(PyListObject *a)
 static int
 list_ass_slice(PyListObject *a, Py_ssize_t ilow, Py_ssize_t ihigh, PyObject *v)
 {
-    /* Because [X]DECREF can recursively invoke list operations on
-       this list, we must postpone all [X]DECREF activity until
-       after the list is back in its canonical shape.  Therefore
-       we must allocate an additional array, 'recycle', into which
-       we temporarily copy the items that are deleted from the
-       list. :-( */
+	/* Because [X]DECREF can recursively invoke list operations on
+	   this list, we must postpone all [X]DECREF activity until
+	   after the list is back in its canonical shape.  Therefore
+	   we must allocate an additional array, 'recycle', into which
+	   we temporarily copy the items that are deleted from the
+	   list. :-(
+	   因为 [X]DECREF 可以递归调用
+	   此列表，我们必须推迟所有 [X]DECREF 活动，直到
+	   在列表恢复其规范形状之后。 因此
+	   我们必须分配一个额外的数组，"回收"，到其中
+	   我们暂时复制从列表删除的项目。:-(*/
     PyObject *recycle_on_stack[8];
     PyObject **recycle = recycle_on_stack; /* will allocate more if needed */
     PyObject **item;
@@ -668,9 +722,11 @@ list_ass_slice(PyListObject *a, Py_ssize_t ilow, Py_ssize_t ihigh, PyObject *v)
         return _list_clear(a);
     }
     item = a->ob_item;
-    /* recycle the items that we are about to remove */
+	/* recycle the items that we are about to remove
+	回收我们即将删除的项目*/
     s = norig * sizeof(PyObject *);
-    /* If norig == 0, item might be NULL, in which case we may not memcpy from it. */
+	/* If norig == 0, item might be NULL, in which case we may not memcpy from it.
+	如果 norig == 0，则 item 可能为 NULL，在这种情况下，我们可能不会从中获取 memcpy。*/
     if (s) {
         if (s > sizeof(recycle_on_stack)) {
             recycle = (PyObject **)PyMem_MALLOC(s);
@@ -807,6 +863,7 @@ list_insert_impl(PyListObject *self, Py_ssize_t index, PyObject *object)
 list.clear
 
 Remove all items from list.
+从列表中删除所有项目。
 [clinic start generated code]*/
 
 static PyObject *
@@ -821,6 +878,7 @@ list_clear_impl(PyListObject *self)
 list.copy
 
 Return a shallow copy of the list.
+返回列表的浅副本。
 [clinic start generated code]*/
 
 static PyObject *
@@ -837,6 +895,7 @@ list.append
      /
 
 Append object to the end of the list.
+将对象追加到列表的末尾。
 [clinic start generated code]*/
 
 static PyObject *
@@ -855,6 +914,7 @@ list.extend
      /
 
 Extend list by appending elements from the iterable.
+通过从可迭代对象中追加元素来扩展列表。
 [clinic start generated code]*/
 
 static PyObject *
@@ -868,10 +928,13 @@ list_extend(PyListObject *self, PyObject *iterable)
     Py_ssize_t i;
     PyObject *(*iternext)(PyObject *);
 
-    /* Special cases:
-       1) lists and tuples which can use PySequence_Fast ops
-       2) extending self to self requires making a copy first
-    */
+	/* Special cases:
+	   1) lists and tuples which can use PySequence_Fast ops
+	   2) extending self to self requires making a copy first
+	   特殊情况：
+	   1）可以使用PySequence_Fast操作的列表和元组
+	   2）将自我扩展到自我需要先制作副本
+	*/
     if (PyList_CheckExact(iterable) || PyTuple_CheckExact(iterable) ||
                 (PyObject *)self == iterable) {
         PyObject **src, **dest;
@@ -885,18 +948,23 @@ list_extend(PyListObject *self, PyObject *iterable)
             Py_RETURN_NONE;
         }
         m = Py_SIZE(self);
-        /* It should not be possible to allocate a list large enough to cause
-        an overflow on any relevant platform */
+		/* It should not be possible to allocate a list large enough to cause
+		an overflow on any relevant platform
+		应该不可能分配足够大的列表以在任何相关平台上导致溢出*/
         assert(m < PY_SSIZE_T_MAX - n);
         if (list_resize(self, m + n) < 0) {
             Py_DECREF(iterable);
             return NULL;
         }
-        /* note that we may still have self == iterable here for the
-         * situation a.extend(a), but the following code works
-         * in that case too.  Just make sure to resize self
-         * before calling PySequence_Fast_ITEMS.
-         */
+		/* note that we may still have self == iterable here for the
+		 * situation a.extend(a), but the following code works
+		 * in that case too.  Just make sure to resize self
+		 * before calling PySequence_Fast_ITEMS.
+		 * 请注意，我们可能仍然有 self == lierable的
+		 * 情况 a.extend（a），但以下代码有效
+		 * 在这种情况下也是如此。
+		 * 只需确保在致电PySequence_Fast_ITEMS之前调整自我大小即可。
+		 */
         /* populate the end of self with iterable's items */
         src = PySequence_Fast_ITEMS(iterable);
         dest = self->ob_item + m;
@@ -914,7 +982,8 @@ list_extend(PyListObject *self, PyObject *iterable)
         return NULL;
     iternext = *it->ob_type->tp_iternext;
 
-    /* Guess a result list size. */
+	/* Guess a result list size.
+	 * 猜测结果列表大小。 */
     n = PyObject_LengthHint(iterable, 8);
     if (n < 0) {
         Py_DECREF(it);
@@ -922,10 +991,12 @@ list_extend(PyListObject *self, PyObject *iterable)
     }
     m = Py_SIZE(self);
     if (m > PY_SSIZE_T_MAX - n) {
-        /* m + n overflowed; on the chance that n lied, and there really
-         * is enough room, ignore it.  If n was telling the truth, we'll
-         * eventually run out of memory during the loop.
-         */
+		/* m + n overflowed; on the chance that n lied, and there really
+		 * is enough room, ignore it.  If n was telling the truth, we'll
+		 * eventually run out of memory during the loop.
+		 * m + n 溢出;如果n撒谎，并且确实有足够的空间，请忽略它。
+		 * 如果 n 说的是实话，我们最终会在循环期间耗尽内存。
+		 */
     }
     else {
         mn = m + n;
@@ -1058,16 +1129,22 @@ reverse_slice(PyObject **lo, PyObject **hi)
 
 /* Lots of code for an adaptive, stable, natural mergesort.  There are many
  * pieces to this algorithm; read listsort.txt for overviews and details.
+ * 大量代码用于自适应、稳定、自然的合并排序。
+ * 此算法有许多部分;阅读listsort.txt了解概述和详细信息。
  */
 
-/* A sortslice contains a pointer to an array of keys and a pointer to
- * an array of corresponding values.  In other words, keys[i]
- * corresponds with values[i].  If values == NULL, then the keys are
- * also the values.
- *
- * Several convenience routines are provided here, so that keys and
- * values are always moved in sync.
- */
+ /* A sortslice contains a pointer to an array of keys and a pointer to
+  * an array of corresponding values.  In other words, keys[i]
+  * corresponds with values[i].  If values == NULL, then the keys are
+  * also the values.
+  *
+  * Several convenience routines are provided here, so that keys and
+  * values are always moved in sync.
+  *
+  * 排序码包含指向keys数组的指针和指向相应values数组的指针。
+  * 换句话说，keys[i]对应于values[i]。 如果values == NULL，则keys也是values。
+  */
+
 
 typedef struct {
     PyObject **keys;
@@ -1128,35 +1205,53 @@ sortslice_advance(sortslice *slice, Py_ssize_t n)
 /* Comparison function: ms->key_compare, which is set at run-time in
  * listsort_impl to optimize for various special cases.
  * Returns -1 on error, 1 if x < y, 0 if x >= y.
+ * 比较功能：ms->key_compare，在运行时设置listsort_impl，
+ * 针对各种特殊情况进行优化。
+ * 错误时返回-1，如果x<y返回1，x>=y返回0
  */
 
 #define ISLT(X, Y) (*(ms->key_compare))(X, Y, ms)
 
-/* Compare X to Y via "<".  Goto "fail" if the comparison raises an
-   error.  Else "k" is set to true iff X<Y, and an "if (k)" block is
-   started.  It makes more sense in context <wink>.  X and Y are PyObject*s.
-*/
+ /* Compare X to Y via "<".  Goto "fail" if the comparison raises an
+	error.  Else "k" is set to true if X<Y, and an "if (k)" block is
+	started.  It makes more sense in context <wink>.  X and Y are PyObject*s.
+	通过“<”比较X和Y。如果比较引发错误，则转到“失败”
+	并且“k”被设置为真如果 X<Y，并且“if（k）”块被激活
+	启动。它在内容<wink>中更有意义。X和Y是PyObject*s。
+ */
 #define IFLT(X, Y) if ((k = ISLT(X, Y)) < 0) goto fail;  \
            if (k)
 
-/* The maximum number of entries in a MergeState's pending-runs stack.
- * This is enough to sort arrays of size up to about
- *     32 * phi ** MAX_MERGE_PENDING
- * where phi ~= 1.618.  85 is ridiculouslylarge enough, good for an array
- * with 2**64 elements.
- */
+ /* The maximum number of entries in a MergeState's pending-runs stack.
+  * This is enough to sort arrays of size up to about
+  *     32 * phi ** MAX_MERGE_PENDING
+  * where phi ~= 1.618.  85 is ridiculouslylarge enough, good for an array
+  * with 2**64 elements.
+  *
+  *MergeState 的挂起运行堆栈中的最大条目数。
+  *这足以对大小约为
+	 32 * phi ** MAX_MERGE_PENDING
+  *的数组进行排序
+  *其中 phi ~= 1.618。 85 已经足够，
+  *非常适合具有 2**64 个元素的数组。
+  */
 #define MAX_MERGE_PENDING 85
 
-/* When we get into galloping mode, we stay there until both runs win less
- * often than MIN_GALLOP consecutive times.  See listsort.txt for more info.
- */
+  /* When we get into galloping mode, we stay there until both runs win less
+   * often than MIN_GALLOP consecutive times.  See listsort.txt for more info.
+   * 当我们进入高速模式时，我们会一直保持那种状态，
+   * 直到两次运行成功的频率都低于连续MIN_GALLOP次。
+   * 有关详细信息，请参阅listsort.txt。
+   */
 #define MIN_GALLOP 7
 
-/* Avoid malloc for small temp arrays. */
+   /* Avoid malloc for small temp arrays. 避免malloc使用小型的临时数组*/
 #define MERGESTATE_TEMP_SIZE 256
 
 /* One MergeState exists on the stack per invocation of mergesort.  It's just
  * a convenient way to pass state around among the helper functions.
+ * 每次调用 mergesort 时，堆栈上都存在一个 MergeState。
+ * 这只是一个在帮助程序函数之间传递状态的便捷方法。
  */
 struct s_slice {
     sortslice base;
@@ -1165,46 +1260,69 @@ struct s_slice {
 
 typedef struct s_MergeState MergeState;
 struct s_MergeState {
-    /* This controls when we get *into* galloping mode.  It's initialized
-     * to MIN_GALLOP.  merge_lo and merge_hi tend to nudge it higher for
-     * random data, and lower for highly structured data.
-     */
+	/* This controls when we get *into* galloping mode.  It's initialized
+	 * to MIN_GALLOP.  merge_lo and merge_hi tend to nudge it higher for
+	 * random data, and lower for highly structured data.
+	 * 这可以控制我们何时*int高速模式。
+	 * 它被初始化为MIN_GALLOP。 对于随机数据，merge_lo和merge_hi往往会将其推高，
+	 *对于高度结构化的数据，将其推得更低
+	 */
     Py_ssize_t min_gallop;
 
-    /* 'a' is temp storage to help with merges.  It contains room for
-     * alloced entries.
-     */
-    sortslice a;        /* may point to temparray below */
+	/* 'a' is temp storage to help with merges.  It contains room for
+	 * alloced entries.
+	 * "a"是临时存储，用于帮助合并。 它包含
+	 * 分配条目的空间
+	 */
+    sortslice a;         /* may point to temparray below 可能指向下面的时间数组*/
     Py_ssize_t alloced;
 
-    /* A stack of n pending runs yet to be merged.  Run #i starts at
-     * address base[i] and extends for len[i] elements.  It's always
-     * true (so long as the indices are in bounds) that
-     *
-     *     pending[i].base + pending[i].len == pending[i+1].base
-     *
-     * so we could cut the storage for this, but it's a minor amount,
-     * and keeping all the info explicit simplifies the code.
-     */
+	/* A stack of n pending runs yet to be merged.  Run #i starts at
+	 * address base[i] and extends for len[i] elements.  It's always
+	 * true (so long as the indices are in bounds) that
+	 *
+	 *     pending[i].base + pending[i].len == pending[i+1].base
+	 *
+	 * so we could cut the storage for this, but it's a minor amount,
+	 * and keeping all the info explicit simplifies the code.
+	 *
+	 *一堆 n 个pends runs尚未合并。
+	 *Run #i从base[i]的位置开始，并扩展到len[i]元素。
+	 *这始终是正确的（只要索引在边界内）
+	 *
+	 *    pending[i].base + pending[i].len == pending[i+1].base
+	 *
+	 *因此，我们可以为此削减存储空间，但这是一个很小的数量，
+	 *并且明确保留所有信息可以简化代码。
+	 */
     int n;
     struct s_slice pending[MAX_MERGE_PENDING];
 
     /* 'a' points to this when possible, rather than muck with malloc. */
     PyObject *temparray[MERGESTATE_TEMP_SIZE];
 
-    /* This is the function we will use to compare two keys,
-     * even when none of our special cases apply and we have to use
-     * safe_object_compare. */
+	/* This is the function we will use to compare two keys,
+	 * even when none of our special cases apply and we have to use
+	 * safe_object_compare.
+	 * 这是我们将用于比较两个keys的函数，
+	 * 即使我们的特殊情况都不适用，
+	 * 并且我们必须使用safe_object_compare。*/
     int (*key_compare)(PyObject *, PyObject *, MergeState *);
 
-    /* This function is used by unsafe_object_compare to optimize comparisons
-     * when we know our list is type-homogeneous but we can't assume anything else.
-     * In the pre-sort check it is set equal to key->ob_type->tp_richcompare */
+	/* This function is used by unsafe_object_compare to optimize comparisons
+	 * when we know our list is type-homogeneous but we can't assume anything else.
+	 * In the pre-sort check it is set equal to key->ob_type->tp_richcompare
+	 * unsafe_object_compare使用此函数来优化对比，
+	 * 当我们知道我们的列表是类型同构的，但我们不能假设任何其他内容时。
+	 * 在预排序检查中，它设置为等于key>ob_type>tp_richcompare*/
     PyObject *(*key_richcompare)(PyObject *, PyObject *, int);
 
-    /* This function is used by unsafe_tuple_compare to compare the first elements
-     * of tuples. It may be set to safe_object_compare, but the idea is that hopefully
-     * we can assume more, and use one of the special-case compares. */
+	/* This function is used by unsafe_tuple_compare to compare the first elements
+	 * of tuples. It may be set to safe_object_compare, but the idea is that hopefully
+	 * we can assume more, and use one of the special-case compares.
+	 * unsafe_tuple_compare使用此函数来与第一个元素的元组进行对比
+	 * 它可能被设置为safe_object_compare，但这个想法是希望
+	 * 我们可以假设更多，并使用其中一个特殊情况比较。*/
     int (*tuple_elem_compare)(PyObject *, PyObject *, MergeState *);
 };
 
@@ -1218,6 +1336,16 @@ struct s_MergeState {
    If islt() complains return -1, else 0.
    Even in case of error, the output slice will be some permutation of
    the input (nothing is lost or duplicated).
+   二进制排序是排序小数组的最佳方法：
+   它很少进行比较，但可以做数据的二次移动在
+   元素的数量上。
+   [lo， hi） 是列表的连续切片，排序方式为
+   二进制插入。 这种排序是稳定的。
+   输入方面，必须具有 lo <= start <= hi，并且 [lo， start） 已经存在
+   排序（如果你不知道，通过开始==lo！
+   如果 islt（） 抱怨返回 -1，否则为 0。
+   即使在出现错误的情况下，输出切片也将是
+   输入（不会丢失或重复任何内容）。
 */
 static int
 binarysort(MergeState *ms, sortslice lo, PyObject **hi, PyObject **start)
@@ -1249,13 +1377,20 @@ binarysort(MergeState *ms, sortslice lo, PyObject **hi, PyObject **start)
                 l = p+1;
         } while (l < r);
         assert(l == r);
-        /* The invariants still hold, so pivot >= all in [lo, l) and
-           pivot < all in [l, start), so pivot belongs at l.  Note
-           that if there are elements equal to pivot, l points to the
-           first slot after them -- that's why this sort is stable.
-           Slide over to make room.
-           Caution: using memmove is much slower under MSVC 5;
-           we're not usually moving many slots. */
+		/* The invariants still hold, so pivot >= all in [lo, l) and
+		   pivot < all in [l, start), so pivot belongs at l.  Note
+		   that if there are elements equal to pivot, l points to the
+		   first slot after them -- that's why this sort is stable.
+		   Slide over to make room.
+		   Caution: using memmove is much slower under MSVC 5;
+		   we're not usually moving many slots.
+		   不变量仍然成立，因此pivot> = all in [lo， l）b并且
+		   pivot<all in[l， start） ，因此pivot属于 l。 注意
+		   如果存在等于pivot的元素，则 l 指向
+		   在他们之后的第一个slot -- 这就是为什么这种类型是稳定的。
+		   跳过来腾出空间。
+		   注意：在MSVC 5下使用memmove要慢得多;
+		   我们通常不会移动很多plots。*/
         for (p = start; p > l; --p)
             *p = *(p-1);
         *l = pivot;
@@ -1279,11 +1414,11 @@ binarysort(MergeState *ms, sortslice lo, PyObject **hi, PyObject **start)
 Return the length of the run beginning at lo, in the slice [lo, hi).  lo < hi
 is required on entry.  "A run" is the longest ascending sequence, with
 
-    lo[0] <= lo[1] <= lo[2] <= ...
+	lo[0] <= lo[1] <= lo[2] <= ...
 
 or the longest descending sequence, with
 
-    lo[0] > lo[1] > lo[2] > ...
+	lo[0] > lo[1] > lo[2] > ...
 
 Boolean *descending is set to 0 in the former case, or to 1 in the latter.
 For its intended use in a stable mergesort, the strictness of the defn of
@@ -1292,6 +1427,22 @@ sequence without violating stability (strict > ensures there are no equal
 elements to get out of order).
 
 Returns -1 in case of error.
+返回从 lo 开始的运行长度，在切片 [lo， hi] 中。
+在输入时需要lo < hi。 "A run"是最长的升序序列，具有
+
+lo[0] <= lo[1] <= lo[2] <= ...
+
+或最长的降序序列，使用
+
+lo[0] > lo[1] > lo[2] > ...
+
+在前一种情况下，布尔值 *降序设置为 0，在后者中设置为 1。
+对于其在稳定合并排序中的预期用途，其严格
+需要"降序"，以便调用方可以安全地反转降序
+序列不违反稳定性（严格>确保没有相等性
+元素来无序）。
+
+如果错误返回-1
 */
 static Py_ssize_t
 count_run(MergeState *ms, PyObject **lo, PyObject **hi, int *descending)
@@ -1333,20 +1484,38 @@ an element equal to key, return the position immediately to the left of
 the leftmost equal element.  [gallop_right() does the same except returns
 the position to the right of the rightmost equal element (if any).]
 
+在排序的向量中定位key的正确位置;如果向量包含
+一个等于key的元素，返回位置立即位于
+最左边的相等元素。 [gallop_right（） 执行相同的操作，但返回除外
+最右边的相等元素（如果有）右侧的位置。
+
 "a" is a sorted vector with n elements, starting at a[0].  n must be > 0.
+
+"a" 是具有 n 个元素的排序向量，从 a[0] 开始。 n 必须> 0
 
 "hint" is an index at which to begin the search, 0 <= hint < n.  The closer
 hint is to the final result, the faster this runs.
 
+"hint"是开始搜索的索引，0 <= hit < n。 越近
+hit是最终结果，运行速度越快。
+
 The return value is the int k in 0..n such that
 
-    a[k-1] < key <= a[k]
+	a[k-1] < key <= a[k]
 
 pretending that *(a-1) is minus infinity and a[n] is plus infinity.  IOW,
 key belongs at index k; or, IOW, the first k elements of a should precede
 key, and the last n-k should follow key.
 
+返回值是 0..n 中的 int k，使得
+a[k-1] < 键 <= a[k]
+假如 *（a-1） 是负无穷大，a[n] 是正无穷大。 IOW
+key属于索引 k;或者，IOW，a 的前 k 个元素应该在key前面，
+最后一个 n-k 应跟在key后面。
+
 Returns -1 on error.  See listsort.txt for info on the method.
+
+出错时返回 -1。 有关该方法的信息，请参阅listsort.txt。
 */
 static Py_ssize_t
 gallop_left(MergeState *ms, PyObject *key, PyObject **a, Py_ssize_t n, Py_ssize_t hint)
@@ -1376,7 +1545,8 @@ gallop_left(MergeState *ms, PyObject *key, PyObject **a, Py_ssize_t n, Py_ssize_
         }
         if (ofs > maxofs)
             ofs = maxofs;
-        /* Translate back to offsets relative to &a[0]. */
+		/* Translate back to offsets relative to &a[0].
+		 *转换回相对于 &a[0] 的正偏移量。*/
         lastofs += hint;
         ofs += hint;
     }
@@ -1427,15 +1597,27 @@ fail:
 Exactly like gallop_left(), except that if key already exists in a[0:n],
 finds the position immediately to the right of the rightmost equal value.
 
+与 gallop_left（） 完全一样，只是如果key已经存在于 a[0：n] 中，
+则立即找到最右边等值的位置。
+
 The return value is the int k in 0..n such that
 
-    a[k-1] <= key < a[k]
+	a[k-1] <= key < a[k]
 
 or -1 if error.
+
+返回值是 0..n 中的 int k，使得
+
+a[k-1] <= key < a[k]
+
+如果出现错误，则为 -1。
 
 The code duplication is massive, but this is enough different given that
 we're sticking to "<" comparisons that it's much harder to follow if
 written as one routine with yet another "left or right?" flag.
+有大规模的代码重复，但考虑到
+我们坚持"<"的比较，这会更加困难如果
+写成一个例程，还有另一个"左或右？"标志。
 */
 static Py_ssize_t
 gallop_right(MergeState *ms, PyObject *key, PyObject **a, Py_ssize_t n, Py_ssize_t hint)
@@ -1492,10 +1674,13 @@ gallop_right(MergeState *ms, PyObject *key, PyObject **a, Py_ssize_t n, Py_ssize
     a -= hint;
 
     assert(-1 <= lastofs && lastofs < ofs && ofs <= n);
-    /* Now a[lastofs] <= key < a[ofs], so key belongs somewhere to the
-     * right of lastofs but no farther right than ofs.  Do a binary
-     * search, with invariant a[lastofs-1] <= key < a[ofs].
-     */
+	/* Now a[lastofs] <= key < a[ofs], so key belongs somewhere to the
+	 * right of lastofs but no farther right than ofs.  Do a binary
+	 * search, with invariant a[lastofs-1] <= key < a[ofs].
+	 *现在 a[lastofs] <= key < a[ofs]，所以 key 属于
+	 *lastofs 右边的某个地方，但比 ofs 更靠右边。
+	 *执行二进制搜索，使用不变的 a[lastofs-1] <= key < a[ofs]。
+	 */
     ++lastofs;
     while (lastofs < ofs) {
         Py_ssize_t m = lastofs + ((ofs - lastofs) >> 1);
@@ -1512,17 +1697,22 @@ fail:
     return -1;
 }
 
-/* Conceptually a MergeState's constructor. */
+/* Conceptually a MergeState's constructor.
+ *从概念上讲，MergeState的构造函数。*/
 static void
 merge_init(MergeState *ms, Py_ssize_t list_size, int has_keyfunc)
 {
     assert(ms != NULL);
     if (has_keyfunc) {
-        /* The temporary space for merging will need at most half the list
-         * size rounded up.  Use the minimum possible space so we can use the
-         * rest of temparray for other things.  In particular, if there is
-         * enough extra space, listsort() will use it to store the keys.
-         */
+		/* The temporary space for merging will need at most half the list
+		 * size rounded up.  Use the minimum possible space so we can use the
+		 * rest of temparray for other things.  In particular, if there is
+		 * enough extra space, listsort() will use it to store the keys.
+		 *用于合并的临时空间四舍五入最多需要列表大小的一半。
+		 *使用尽可能小的空间，
+		 *这样我们就可以将 temparray 的其余部分用于其他事情。
+		 *特别是，如果有足够的额外空间，listsort（） 将使用它来存储密钥。
+		 */
         ms->alloced = (list_size + 1) / 2;
 
         /* ms->alloced describes how many keys will be stored at
@@ -1544,6 +1734,8 @@ merge_init(MergeState *ms, Py_ssize_t list_size, int has_keyfunc)
 /* Free all the temp memory owned by the MergeState.  This must be called
  * when you're done with a MergeState, and may be called before then if
  * you want to free the temp memory early.
+ * 释放 MergeState 拥有的所有临时内存。 当您完成 MergeState 时，必须调用此项，
+ * 如果要提前释放临时内存，则可以在此之前调用它
  */
 static void
 merge_freemem(MergeState *ms)
@@ -1553,8 +1745,11 @@ merge_freemem(MergeState *ms)
         PyMem_Free(ms->a.keys);
 }
 
+
 /* Ensure enough temp memory for 'need' array slots is available.
  * Returns 0 on success and -1 if the memory can't be gotten.
+ * 确保有足够的临时内存供“需要的”插槽数列使用
+ * 成功时返回 0，如果无法获得内存，则返回 -1。
  */
 static int
 merge_getmem(MergeState *ms, Py_ssize_t need)
@@ -1594,6 +1789,11 @@ merge_getmem(MergeState *ms, Py_ssize_t need)
  * Must also have that ssa.keys[na-1] belongs at the end of the merge, and
  * should have na <= nb.  See listsort.txt for more info.  Return 0 if
  * successful, -1 if error.
+ */
+ /*
+ * 顺着（从第一位到最后一位）合并,合并到ssa里面
+ * na和nb必须大于0。还必须具有ssa[na-1]属于合并的末尾，并且应具有na<=nb。
+ * 如果成功，则返回0；如果错误，则返回-1。
  */
 static Py_ssize_t
 merge_lo(MergeState *ms, sortslice ssa, Py_ssize_t na,
@@ -1721,11 +1921,17 @@ CopyB:
     return 0;
 }
 
+
 /* Merge the na elements starting at pa with the nb elements starting at
  * ssb.keys = ssa.keys + na in a stable way, in-place.  na and nb must be > 0.
  * Must also have that ssa.keys[na-1] belongs at the end of the merge, and
  * should have na >= nb.  See listsort.txt for more info.  Return 0 if
  * successful, -1 if error.
+ */
+ /*
+ * 倒着合并（从最后一位到第一位），合并到ssb里面
+ * na和nb必须大于0。还必须具有ssa[na-1]属于合并的末尾，并且应具有na>=nb。
+ * 如果成功，则返回0；如果错误，则返回-1。
  */
 static Py_ssize_t
 merge_hi(MergeState *ms, sortslice ssa, Py_ssize_t na,
@@ -1866,6 +2072,10 @@ CopyA:
 /* Merge the two runs at stack indices i and i+1.
  * Returns 0 on success, -1 on error.
  */
+ /*
+  * 合并堆栈索引i和i+1处的2个run。
+  * 成功时返回0，错误时返回-1。
+ */
 static Py_ssize_t
 merge_at(MergeState *ms, Py_ssize_t i)
 {
@@ -1885,10 +2095,15 @@ merge_at(MergeState *ms, Py_ssize_t i)
     assert(na > 0 && nb > 0);
     assert(ssa.keys + na == ssb.keys);
 
-    /* Record the length of the combined runs; if i is the 3rd-last
-     * run now, also slide over the last run (which isn't involved
-     * in this merge).  The current run i+1 goes away in any case.
-     */
+	/* Record the length of the combined runs; if i is the 3rd-last
+	 * run now, also slide over the last run (which isn't involved
+	 * in this merge).  The current run i+1 goes away in any case.
+	 */
+	 /*
+	  * 记录组合运行的长度；如果我现在是第三次最后一次跑步，
+	  * 也可以滑动到最后一次跑步（这与此合并无关）。
+	  * 当前运行i+1在任何情况下都会消失。
+	 */
     ms->pending[i].len = na + nb;
     if (i == ms->n - 3)
         ms->pending[i+1] = ms->pending[i+2];
@@ -1931,6 +2146,12 @@ merge_at(MergeState *ms, Py_ssize_t i)
  *
  * Returns 0 on success, -1 on error.
  */
+ /*
+  * 检查等待合并的管路堆栈，合并相邻管路，直到重新建立堆栈不变量：
+  * 1. len[-3] > len[-2] + len[-1]
+  * 2. len[-2] > len[-1]
+  * 成功时返回0，错误时返回-1
+  */
 static int
 merge_collapse(MergeState *ms)
 {
@@ -1961,6 +2182,10 @@ merge_collapse(MergeState *ms)
  *
  * Returns 0 on success, -1 on error.
  */
+ /*
+  * 不管不变量如何，合并堆栈上的所有运行，直到只剩下一个。这在合并排序的末尾使用。
+  * 成功时返回0，错误时返回-1。
+ */
 static int
 merge_force_collapse(MergeState *ms)
 {
@@ -1987,6 +2212,11 @@ merge_force_collapse(MergeState *ms)
  *
  * See listsort.txt for more info.
  */
+ /*
+  * 计算最小运行长度的良好值；短于此的自然运行通过二进制插入人为地增强。
+  * 如果n<64，则返回n（它太小了，无法处理复杂的东西）。
+  * 如果n是2的精确幂，则返回32。否则返回int k，32<=k<=64，因此n/k接近但严格小于2的精确幂。
+ */
 static Py_ssize_t
 merge_compute_minrun(Py_ssize_t n)
 {
@@ -2011,13 +2241,31 @@ reverse_sortslice(sortslice *s, Py_ssize_t n)
 /* Here we define custom comparison functions to optimize for the cases one commonly
  * encounters in practice: homogeneous lists, often of one of the basic types. */
 
-/* This struct holds the comparison function and helper functions
- * selected in the pre-sort check. */
+ /*
+  * 在这里，我们定义了自定义比较函数，以针对实践中经常遇到的情况进行优化：
+  * 同构列表，通常是基本类型之一
+ */
 
-/* These are the special case compare functions.
- * ms->key_compare will always point to one of these: */
+ /* This struct holds the comparison function and helper functions
+  * selected in the pre-sort check. */
 
-/* Heterogeneous compare: default, always safe to fall back on. */
+  /*
+   * 此结构保存在pre-sort check中选择的比较函数和帮助器
+  */
+
+  /* These are the special case compare functions.
+   * ms->key_compare will always point to one of these: */
+
+   /*
+	* 这些是特例比较函数。
+	* ms->key_compare将始终指向以下选项之一：
+   */
+
+   /* Heterogeneous compare: default, always safe to fall back on. */
+
+   /*
+	* 异类比较：默认，总是安全的。
+   */
 static int
 safe_object_compare(PyObject *v, PyObject *w, MergeState *ms)
 {
@@ -2028,6 +2276,9 @@ safe_object_compare(PyObject *v, PyObject *w, MergeState *ms)
 /* Homogeneous compare: safe for any two compareable objects of the same type.
  * (ms->key_richcompare is set to ob_type->tp_richcompare in the
  *  pre-sort check.)
+ */
+ /*
+  * 同质比较：对于同一类型的任何两个可比较对象都是安全的。
  */
 static int
 unsafe_object_compare(PyObject *v, PyObject *w, MergeState *ms)
@@ -2089,6 +2340,7 @@ unsafe_latin_compare(PyObject *v, PyObject *w, MergeState *ms)
 }
 
 /* Bounded int compare: compare any two longs that fit in a single machine word. */
+/* 有界整数比较：比较适合单个机器字的任意两个长度。*/
 static int
 unsafe_long_compare(PyObject *v, PyObject *w, MergeState *ms)
 {
@@ -2117,6 +2369,7 @@ unsafe_long_compare(PyObject *v, PyObject *w, MergeState *ms)
 }
 
 /* Float compare: compare any two floats. */
+/* 浮点比较：比较任意两个浮点。 */
 static int
 unsafe_float_compare(PyObject *v, PyObject *w, MergeState *ms)
 {
@@ -2137,6 +2390,12 @@ unsafe_float_compare(PyObject *v, PyObject *w, MergeState *ms)
  * but run on the list [x[0] for x in L]. This allows us to optimize compares
  * on two levels (as long as [x[0] for x in L] is type-homogeneous.) The idea is
  * that most tuple compares don't involve x[1:]. */
+ /*
+  * 元组比较：比较*任意*两个元组，使用 ms->tuple_elem_compare比较第一个元素,
+  * 使用与ms->key_compare相同的预排序检查进行设置，但在列表[x[0] for x in L]上运行，
+  * 这使我们能够在两个级别上优化比较（只要[x[0] for x in L]是类型同构的。）
+  * 其思想是大多数元组比较不涉及x[1:]。
+ */
 static int
 unsafe_tuple_compare(PyObject *v, PyObject *w, MergeState *ms)
 {
@@ -2178,6 +2437,12 @@ unsafe_tuple_compare(PyObject *v, PyObject *w, MergeState *ms)
  * list will be some permutation of its input state (nothing is lost or
  * duplicated).
  */
+ /*
+  * 自适应、稳定、自然的排序
+  * 成功时返回Py_None，错误时返回NULL。
+  * 即使在出现错误的情况下，列表也将是其输入状态的某种排列（没有任何内容丢失或重复）
+ */
+
 /*[clinic input]
 list.sort
 
@@ -2213,6 +2478,10 @@ list_sort_impl(PyListObject *self, PyObject *keyfunc, int reverse)
      * sorting (allowing mutations during sorting is a core-dump
      * factory, since ob_item may change).
      */
+	 /*
+	  * 列表暂时变为空，这样比较函数执行的突变不会影响我们正在排序的内存片
+	  *（在排序期间允许突变是一个核心转储工厂，因为ob_项可能会更改）。
+	 */
     saved_ob_size = Py_SIZE(self);
     saved_ob_item = self->ob_item;
     saved_allocated = self->allocated;
@@ -2258,6 +2527,10 @@ list_sort_impl(PyListObject *self, PyObject *keyfunc, int reverse)
      * How much optimization is safe? We test for homogeneity with respect to
      * several properties that are expensive to check at compare-time, and
      * set ms appropriately. */
+	 /*
+	  * 预排序检查：这里是我们决定使用哪个比较函数的地方。多少优化是安全的？
+	  * 我们测试了在比较时需要花费大量时间检查的几个属性的同质性，并适当地设置ms。
+	 */
     if (saved_ob_size > 1) {
         /* Assume the first element is representative of the whole list. */
         int keys_are_in_tuples = (lo.keys[0]->ob_type == &PyTuple_Type &&
@@ -2284,7 +2557,11 @@ list_sort_impl(PyListObject *self, PyObject *keyfunc, int reverse)
             /* Note: for lists of tuples, key is the first element of the tuple
              * lo.keys[i], not lo.keys[i] itself! We verify type-homogeneity
              * for lists of tuples in the if-statement directly above. */
-            PyObject *key = (keys_are_in_tuples ?
+			 /*
+			  * 注意：对于元组列表，key是元组lo.keys[i]的第一个元素，而不是lo.keys[i]本身！
+			  * 我们在上面的if语句中验证元组列表的类型同质性。
+			 */
+			PyObject *key = (keys_are_in_tuples ?
                              PyTuple_GET_ITEM(lo.keys[i], 0) :
                              lo.keys[i]);
 
@@ -2292,6 +2569,7 @@ list_sort_impl(PyListObject *self, PyObject *keyfunc, int reverse)
                 keys_are_all_same_type = 0;
                 /* If keys are in tuple we must loop over the whole list to make
                    sure all items are tuples */
+				/*如果键在元组中，我们必须循环整个列表，以确保所有项都是元组*/
                 if (!keys_are_in_tuples) {
                     break;
                 }
@@ -2314,6 +2592,7 @@ list_sort_impl(PyListObject *self, PyObject *keyfunc, int reverse)
             }
 
         /* Choose the best compare, given what we now know about the keys. */
+
         if (keys_are_all_same_type) {
 
             if (key_type == &PyUnicode_Type && strings_are_latin) {
@@ -2339,7 +2618,8 @@ list_sort_impl(PyListObject *self, PyObject *keyfunc, int reverse)
         if (keys_are_in_tuples) {
             /* Make sure we're not dealing with tuples of tuples
              * (remember: here, key_type refers list [key[0] for key in keys]) */
-            if (key_type == &PyTuple_Type) {
+			 /*确保我们没有处理元组的元组（请记住：这里，key_type指的是列表[key[0]表示key-in-key]）*/
+			if (key_type == &PyTuple_Type) {
                 ms.tuple_elem_compare = safe_object_compare;
             }
             else {
@@ -2359,6 +2639,9 @@ list_sort_impl(PyListObject *self, PyObject *keyfunc, int reverse)
 
     /* Reverse sort stability achieved by initially reversing the list,
     applying a stable forward sort, then reversing the final result. */
+	/*
+	 * 通过最初反转列表实现反向排序稳定性，应用稳定的正向排序，然后反转最终结果。
+	*/
     if (reverse) {
         if (keys != NULL)
             reverse_slice(&keys[0], &keys[saved_ob_size]);
@@ -2368,6 +2651,9 @@ list_sort_impl(PyListObject *self, PyObject *keyfunc, int reverse)
     /* March over the array once, left to right, finding natural runs,
      * and extending short natural runs to minrun elements.
      */
+	 /*
+	  * 从左到右在阵列上行进一次，查找自然行程，并将短自然行程延伸到minrun元素。
+	  */
     minrun = merge_compute_minrun(nremaining);
     do {
         int descending;
@@ -2440,7 +2726,8 @@ keyfunc_fail:
     if (final_ob_item != NULL) {
         /* we cannot use _list_clear() for this because it does not
            guarantee that the list is really empty when it returns */
-        while (--i >= 0) {
+		   /*我们不能对此使用_list_clear（），因为它不能保证列表返回时确实为空*/
+		while (--i >= 0) {
             Py_XDECREF(final_ob_item[i]);
         }
         PyMem_FREE(final_ob_item);
@@ -2708,6 +2995,10 @@ Built-in mutable sequence.
 
 If no argument is given, the constructor creates a new empty list.
 The argument must be an iterable if specified.
+
+如果没有给出参数，构造函数将创建一个新的空列表。
+如果指定，则参数必须是iterable。
+
 [clinic start generated code]*/
 
 static int
@@ -2901,6 +3192,10 @@ list_ass_subscript(PyListObject* self, PyObject* item, PyObject* value)
                items for each item that is part of the slice,
                and then tail end of the list that was not
                covered by the slice */
+			   /*
+				* 基本上，我们移动列表中*不是*部分的部分：
+				* 为每个属于该部分的step-1个项目移动项目，然后移动该部分未覆盖的列表末尾
+			   */
             for (cur = start, i = 0;
                  cur < (size_t)stop;
                  cur += step, i++) {
@@ -3445,7 +3740,7 @@ trace_free_list(PyListObject *a)
 
 		if (numfree > 0) {
 			printf("now free_list has %d ListObject can used\n", numfree);
-			PyObject_Print(a, stdout, 1);
+			PyObject_Print((PyObject *)a, stdout, 1);
 			printf(" address is @%p\n", a);
 			_find_free_list(a);
 		}

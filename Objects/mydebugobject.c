@@ -253,6 +253,9 @@ Py_MyDebug_Switch(PyObject* cmd)
 	_Py_Switch_Debug_Mode(cmd);
 }
 
+/*
+   observe the small ints in PyLongObject
+*/
 static void
 longobject_small_ints(char* func_name, PyObject* v, PyLongObject small_ints[])
 {
@@ -298,6 +301,10 @@ longobject_small_ints(char* func_name, PyObject* v, PyLongObject small_ints[])
 
 }
 
+/*
+   observe the small ints in PyLongObject
+   Notice: to control the input info, we control num which can trigger this function between -10 and 15
+*/
 void 
 Py_MyDebug_Small_Ints(char* func_name, PyObject* v, PyLongObject small_ints[])
 {
@@ -328,6 +335,9 @@ Py_MyDebug_Small_Ints(char* func_name, PyObject* v, PyLongObject small_ints[])
 
 }
 
+/*
+  observe longobject created from bytesobject in detail
+*/
 static void
 longobject_frombytes_trace(PyObject * obj)
 {
@@ -368,6 +378,9 @@ Py_MyDebug_long_frombytes(PyObject * obj)
 	longobject_frombytes_trace(obj);
 }
 
+/*
+  observe longobject created from unicodeobject
+*/
 static void
 longobject_fromunicodeobject_trace(PyObject * obj)
 {
@@ -388,6 +401,9 @@ Py_MyDebug_long_fromunicodeobject(PyObject * obj)
 	longobject_fromunicodeobject_trace(obj);
 }
 
+/*
+  observe longobject created from longobject
+*/
 static void
 longobject_fromlong_trace()
 {
@@ -405,6 +421,10 @@ Py_MyDebug_long_fromlong()
 	longobject_fromlong_trace();
 }
 
+/*
+  observe longobject created in different conditions
+  Notice: you need create by int(xxx)
+*/
 static void
 longobject_create(PyTypeObject *type, PyObject *x, int base)
 {
@@ -416,7 +436,7 @@ longobject_create(PyTypeObject *type, PyObject *x, int base)
 		printf("you input attribute is :\n");
 		printf("\ttype -> %s\n", type->tp_name);
 		printf("\tx -> %s\n", (x == NULL) ? "NULL" : "Object");
-		if (base == NULL) {
+		if (base == -1) {
 			printf("\tobase -> NULL\n");
 		}
 		else {
@@ -438,7 +458,7 @@ longobject_create(PyTypeObject *type, PyObject *x, int base)
 void
 Py_MyDebug_longobject_create(PyTypeObject *type, PyObject *x, PyObject *obase)
 {
-	int base = NULL;
+	int base = -1;
 	
 	if (obase != NULL) {
 		base = PyNumber_AsSsize_t(obase, NULL);
@@ -450,6 +470,9 @@ Py_MyDebug_longobject_create(PyTypeObject *type, PyObject *x, PyObject *obase)
 	longobject_create(type, x, base);
 }
 
+/*
+  observe longobject created from common number without base
+*/
 static void
 longobject_fromnumber_trace()
 {
@@ -468,6 +491,9 @@ Py_MyDebug_number_long()
 	longobject_fromnumber_trace();
 }
 
+/*
+  print list content in running
+*/
 static void
 list_print(PyListObject *op)
 {
@@ -486,6 +512,9 @@ list_print(PyListObject *op)
 	}
 }
 
+/*
+  observe listobject created 
+*/
 static void
 listobject_create(Py_ssize_t size, PyListObject *op)
 {
@@ -527,6 +556,9 @@ Py_MyDebug_List_Print(PyListObject* op)
 	list_print(op);
 }
 
+/*
+  observe listobject inited
+*/
 static void
 list_init_trace(PyListObject *op)
 {
@@ -547,6 +579,9 @@ Py_MyDebug_List_Init(PyListObject* op)
 	list_init_trace(op);
 }
 
+/*
+  observe listobject when set item in list
+*/
 static void
 list_setitem_trace(PyObject* obj)
 {
@@ -568,6 +603,10 @@ Py_MyDebug_List_Setitem(PyObject* op)
 	list_setitem_trace(op);
 }
 
+/*
+  observe listobject when append item in list
+  Notice: when you append string "append", then the info can be print, like list.append("append")
+*/
 static void
 list_appenditem_trace(PyListObject* obj, PyObject* new_item)
 {
@@ -598,6 +637,7 @@ list_appenditem_trace(PyListObject* obj, PyObject* new_item)
 	}
 }
 
+
 void
 Py_MyDebug_List_Appenditem(PyListObject* obj, PyObject* new_item)
 {
@@ -607,6 +647,9 @@ Py_MyDebug_List_Appenditem(PyListObject* obj, PyObject* new_item)
 	list_appenditem_trace(obj, new_item);
 }
 
+/*
+  observe dictobject created
+*/
 static void
 dict_create_trace(PyObject *self)
 {
@@ -621,7 +664,7 @@ dict_create_trace(PyObject *self)
 
 		printf("[dict_new]create a new dict\n");
 		printf("\tma_used is %d\n", d->ma_used);
-		printf("\tma_version_tag is %d\n", d->ma_version_tag);
+		printf("\tma_version_tag is %d\n", (int)d->ma_version_tag);
 
 		PyDictKeysObject* keys = d->ma_keys;
 

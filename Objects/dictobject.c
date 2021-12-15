@@ -404,6 +404,7 @@ PyDict_ClearFreeList(void)
     PyDictObject *op;
     int ret = numfree + numfreekeys;
     while (numfree) {
+		/* 当缓冲池可用时 */
         op = free_list[--numfree];
         assert(PyDict_CheckExact(op));
         PyObject_GC_Del(op);
@@ -758,12 +759,14 @@ new_dict(PyDictKeysObject *keys, PyObject **values)
     PyDictObject *mp;
     assert(keys != NULL);
     if (numfree) {
+		/* 缓冲池可用，则从缓冲池中取出一个对象，无需申请内存 */
         mp = free_list[--numfree];
         assert (mp != NULL);
         assert (Py_TYPE(mp) == &PyDict_Type);
         _Py_NewReference((PyObject *)mp);
     }
     else {
+		/* 申请内存，创建一个新的对象 */
         mp = PyObject_GC_New(PyDictObject, &PyDict_Type);
         if (mp == NULL) {
             DK_DECREF(keys);
@@ -771,6 +774,7 @@ new_dict(PyDictKeysObject *keys, PyObject **values)
             return NULL;
         }
     }
+	/* 给dict对象初始化 */
     mp->ma_keys = keys;
     mp->ma_values = values;
     mp->ma_used = 0;
@@ -1122,7 +1126,7 @@ lookdict_split(PyDictObject *mp, PyObject *key,
 {
     /* 
 	mp must split table 
-	mp必须拆分表
+	mp 必须为拆分表
 	*/
     assert(mp->ma_values != NULL);
     if (!PyUnicode_CheckExact(key)) {
@@ -1296,12 +1300,11 @@ insertdict(PyDictObject *mp, PyObject *key, Py_hash_t hash, PyObject *value)
 
     if (ix == DKIX_EMPTY) {
         /* 
-		Insert into new slot. 
 		插入新插槽。
 		*/
         assert(old_value == NULL);
         if (mp->ma_keys->dk_usable <= 0) {
-            /* Need to resize. 需要调整大小 */
+            /* 需要调整大小 */
             if (insertion_resize(mp) < 0)
                 goto Fail;
         }
@@ -1317,6 +1320,7 @@ insertdict(PyDictObject *mp, PyObject *key, Py_hash_t hash, PyObject *value)
         else {
             ep->me_value = value;
         }
+		/* 更新dict的相关属性 */
         mp->ma_used++;
         mp->ma_version_tag = DICT_NEXT_VERSION();
         mp->ma_keys->dk_usable--;

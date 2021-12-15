@@ -46,6 +46,7 @@ PyAPI_DATA(Py_ssize_t)   my_debug;
 #define Py_MYLONG_CREATE_TRACE_OFF -1
 
 
+
 /* FUNCTION API */
 PyAPI_FUNC(PyObject *)       PyMyDebug_New();
 PyAPI_FUNC(void) Py_MyDebug_Switch(PyObject* cmd);
