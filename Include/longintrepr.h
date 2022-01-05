@@ -80,6 +80,14 @@ typedef long stwodigits; /* signed variant of twodigits */
 
    CAUTION:  Generic code manipulating subtypes of PyVarObject has to
    aware that ints abuse  ob_size's sign bit.
+
+   长整数表示。数字的绝对值等于和（对于i=0到abs（ob_size）-1），
+   ob_size[i]*2**（SHIFT*i）负数表示为ob_size<0；
+   0由ob_size==0表示。
+   在标准化数字中，ob_digit[abs（ob_size）-1]（最高有效位）从不为零。
+   此外，在所有情况下，对于所有有效i，0<=ob_digit[i]<=MASK。
+   分配函数负责分配额外内存，以便ob_digit[0]。。。ob_digit[abs（ob_size）-1]实际可用。
+   警告：操纵PyVarObject子类型的泛型代码必须注意ints滥用ob_size的符号位。
 */
 
 struct _longobject {

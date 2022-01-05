@@ -209,18 +209,24 @@ _Py_Switch_Debug_Mode(PyObject* cmd)
 			printf("[myDebug mode on]\n");
 			_Py_MYDEBUG_ON_LONG;
 			printf("my_debug become %d>\n", my_debug);
+			printf("\t[1]you can use int(xxx[, base=xxx]) observe PyLongObject's created process.\n");
+			printf("\t[2]you can use print(A) (A is a int and -10<=A<=15) observe PyLongObject's small ints.\n");
 		}
 		else if (PyUnicode_Compare(cmp_on_list, cmd) == 0) {
 			printf("<my_debug is %d\n", my_debug);
 			printf("[myDebug mode on]\n");
 			_Py_MYDEBUG_ON_LIST;
 			printf("my_debug become %d>\n", my_debug);
+			printf("\t[1]you can use len([...]) observe PyListObject's free list.\n");
+			printf("\t[2]you can use list([...]) ([...]'s length need >= 3)observe PyListObject's created and inited.\n");
+			printf("\t[3]you can use [...].append('append') observe PyListObject's internal memory changes and resize strategy.\n");
 		}
 		else if (PyUnicode_Compare(cmp_on_dict, cmd) == 0) {
 			printf("<my_debug is %d\n", my_debug);
 			printf("[myDebug mode on]\n");
 			_Py_MYDEBUG_ON_DICT;
 			printf("my_debug become %d>\n", my_debug);
+			printf("\t[1]you can use dict({...}) observe PyDictObject's created and inited.\n");
 		}
 		else if (PyUnicode_Compare(cmp_on_all, cmd) == 0) {
 			printf("<my_debug is %d\n", my_debug);

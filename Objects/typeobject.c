@@ -2464,6 +2464,9 @@ type_new(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
         return NULL;
 
     /* Adjust for empty tuple bases */
+	if (bases == NULL) {
+		return NULL;
+	}
     nbases = PyTuple_GET_SIZE(bases);
     if (nbases == 0) {
         base = &PyBaseObject_Type;
@@ -5960,6 +5963,9 @@ tp_new_wrapper(PyObject *self, PyObject *args, PyObject *kwds)
     if (self == NULL || !PyType_Check(self))
         Py_FatalError("__new__() called with non-type 'self'");
     type = (PyTypeObject *)self;
+	if (type == NULL) {
+		return NULL;
+	}
     if (!PyTuple_Check(args) || PyTuple_GET_SIZE(args) < 1) {
         PyErr_Format(PyExc_TypeError,
                      "%s.__new__(): not enough arguments",
@@ -7847,6 +7853,9 @@ super_init(PyObject *self, PyObject *args, PyObject *kwds)
             for (i = 0; i < n; i++) {
                 if (co->co_cell2arg[i] == 0) {
                     PyObject *cell = f->f_localsplus[co->co_nlocals + i];
+					if (cell == NULL) {
+						return -1;
+					}
                     assert(PyCell_Check(cell));
                     obj = PyCell_GET(cell);
                     break;

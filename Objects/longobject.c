@@ -2827,9 +2827,10 @@ _PyLong_Frexp(PyLongObject *a, Py_ssize_t *e)
     a_bits = bits_in_digit(a->ob_digit[a_size-1]);
     /* The following is an overflow-free version of the check   以下是检查的无溢出版本
        "if ((a_size - 1) * PyLong_SHIFT + a_bits > PY_SSIZE_T_MAX) ..." */
-    if (a_size >= (PY_SSIZE_T_MAX - 1) / PyLong_SHIFT + 1 &&
+    /*if (a_size >= (PY_SSIZE_T_MAX - 1) / PyLong_SHIFT + 1 &&
         (a_size > (PY_SSIZE_T_MAX - 1) / PyLong_SHIFT + 1 ||
-         a_bits > (PY_SSIZE_T_MAX - 1) % PyLong_SHIFT + 1))
+         a_bits > (PY_SSIZE_T_MAX - 1) % PyLong_SHIFT + 1))*/
+	if ((a_size - 1) * PyLong_SHIFT + a_bits > PY_SSIZE_T_MAX)
         goto overflow;
     a_bits = (a_size - 1) * PyLong_SHIFT + a_bits;
 
@@ -4287,7 +4288,7 @@ long_true_divide(PyObject *v, PyObject *w)
     /* Convert x to a double dx; the conversion is exact. */
     dx = x->ob_digit[--x_size];
     while (x_size > 0)
-        dx = dx * PyLong_BASE + x->ob_digit[--x_size];
+        dx = dx * (double)PyLong_BASE + x->ob_digit[--x_size];
     Py_DECREF(x);
 
     /* Check whether ldexp result will overflow a double. */

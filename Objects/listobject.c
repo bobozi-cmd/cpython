@@ -171,6 +171,16 @@ _PyList_DebugMallocStats(FILE *out)
                            numfree, sizeof(PyListObject));
 }
 
+
+/*
+创建list的操作很清晰，首先检查size的大小是否在正常范围内，即大于等于0。
+如果size正常，程序会先检查列表缓冲池，缓冲池是Python中一种很常见的优化技术，后面我们将详细介绍列表缓冲池，简单的理解，当list要被销毁时，Python会检查缓冲池中是否还有空间，
+如果还有空间，则不销毁这个list，而将其清空，放入缓冲池，
+等下次要创建一个新的list时，如果缓冲池中有直接可用的对象，则无需再创建，直接从池中分配即可。
+创建出来的list对象将赋值给op变量，然后根据传入参数size的大小，
+为其申请内存，申请成功之后，将list对象的ob_size属性和allocated属性的大小设置为size，
+最后会将该对象加入垃圾回收跟踪的容器中，返回创建出来的list对象。
+*/
 PyObject *
 PyList_New(Py_ssize_t size)
 {
@@ -513,6 +523,7 @@ list_slice(PyListObject *a, Py_ssize_t ilow, Py_ssize_t ihigh)
     PyListObject *np;
     PyObject **src, **dest;
     Py_ssize_t i, len;
+	/* 切片策略，参考setitem的where */ 
     if (ilow < 0)
         ilow = 0;
     else if (ilow > Py_SIZE(a))

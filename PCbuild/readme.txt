@@ -1,6 +1,5 @@
 Quick Start Guide
 -----------------
-
 1.  Install Microsoft Visual Studio 2017 with Python workload and
     Python native development component.
 1a. Optionally install Python 3.6 or later.  If not installed,
